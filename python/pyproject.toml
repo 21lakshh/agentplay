@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentplay"
+version = "0.1.3"
+description = "Replay your coding-agent sessions (Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro) as a map and a timeline. Local only."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+requires-python = ">=3.11"
+authors = [{ name = "Entelligence AI" }]
+keywords = ["claude-code", "codex", "cursor", "copilot", "coding-agent", "observability", "developer-tools"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Entelligence-AI/agentplay"
+Issues = "https://github.com/Entelligence-AI/agentplay/issues"
+Source = "https://github.com/Entelligence-AI/agentplay"
+Security = "https://github.com/Entelligence-AI/agentplay/security/policy"
+
+[project.scripts]
+agentplay = "agentplay.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6", "jsonschema>=4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentplay"]
+artifacts = ["src/agentplay/viewer/**"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/agentplay", "tests", "README.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"]
+artifacts = ["src/agentplay/viewer/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["src/agentplay/_core"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = ["E501"]

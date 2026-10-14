@@ -1,0 +1,1166 @@
+{
+ "schema": "agentplay/v1",
+ "session": {
+  "id": "local:claude-code:5f2c9a1e-7b44-4d0e-9c1a-demo00000001",
+  "agentTool": "claude-code",
+  "cliVersion": "2.1.4",
+  "startedAt": "2026-09-24T14:05:12.000Z",
+  "durationMs": 249685,
+  "models": [
+   "claude-haiku-4-5",
+   "claude-opus-4-5",
+   "claude-sonnet-4-5"
+  ],
+  "pathMode": "relative",
+  "truncated": false,
+  "outcome": "pr_created",
+  "role": "root",
+  "parentSessionId": null
+ },
+ "totals": {
+  "calls": 26,
+  "requests": 20,
+  "userTurns": 3,
+  "subagents": 1,
+  "errors": 2,
+  "tokens": 1239680,
+  "costUsd": 1.9251,
+  "filesTouched": 10,
+  "prsCreated": 1,
+  "filesCreated": 3,
+  "filesDeleted": 0,
+  "errorsBySource": {
+   "tool": 1,
+   "llm": 1
+  },
+  "errorsByClass": {
+   "exit_code": 1,
+   "overloaded": 1
+  },
+  "retries": 1,
+  "delays": 2,
+  "delayMs": 33800,
+  "maxContext": 161000,
+  "compactions": 1,
+  "llmLatencyP50": 6151,
+  "llmLatencyP95": 21000,
+  "outputTokens": 10680,
+  "tasks": 3,
+  "commits": 1
+ },
+ "repos": [
+  {
+   "id": "r0",
+   "name": "acme/api",
+   "remote": "git@github.com:acme/api.git"
+  }
+ ],
+ "files": [
+  {
+   "id": 0,
+   "repo": "r0",
+   "path": "README.md",
+   "reads": 1,
+   "edits": 0,
+   "hits": 0,
+   "first": 2
+  },
+  {
+   "id": 1,
+   "repo": "r0",
+   "path": "src/middleware/index.ts",
+   "reads": 1,
+   "edits": 1,
+   "hits": 1,
+   "first": 6,
+   "op": "modify"
+  },
+  {
+   "id": 2,
+   "repo": "r0",
+   "path": "src/middleware/auth.ts",
+   "reads": 1,
+   "edits": 0,
+   "hits": 1,
+   "first": 6
+  },
+  {
+   "id": 3,
+   "repo": "r0",
+   "path": "src/server.ts",
+   "reads": 1,
+   "edits": 0,
+   "hits": 1,
+   "first": 6
+  },
+  {
+   "id": 4,
+   "repo": "r0",
+   "path": "src/config/env.ts",
+   "reads": 1,
+   "edits": 1,
+   "hits": 0,
+   "first": 12,
+   "op": "modify"
+  },
+  {
+   "id": 5,
+   "repo": "r0",
+   "path": "src/routes/orders.ts",
+   "reads": 1,
+   "edits": 1,
+   "hits": 0,
+   "first": 15,
+   "op": "modify"
+  },
+  {
+   "id": 6,
+   "repo": "r0",
+   "path": "package.json",
+   "reads": 1,
+   "edits": 0,
+   "hits": 0,
+   "first": 16
+  },
+  {
+   "id": 7,
+   "repo": "r0",
+   "path": "src/middleware/rateLimit.ts",
+   "reads": 1,
+   "edits": 2,
+   "hits": 0,
+   "first": 21,
+   "op": "create"
+  },
+  {
+   "id": 8,
+   "repo": "r0",
+   "path": "test/rateLimit.test.ts",
+   "reads": 0,
+   "edits": 1,
+   "hits": 0,
+   "first": 26,
+   "op": "create"
+  },
+  {
+   "id": 9,
+   "repo": "r0",
+   "path": "docs/rate-limits.md",
+   "reads": 0,
+   "edits": 1,
+   "hits": 0,
+   "first": 41,
+   "op": "create"
+  }
+ ],
+ "prs": [
+  {
+   "provider": "github",
+   "repo": "acme/api",
+   "number": 142,
+   "url": "https://github.com/acme/api/pull/142",
+   "seq": 53,
+   "state": "open"
+  }
+ ],
+ "agents": [
+  {
+   "id": "main",
+   "parent": null,
+   "kind": "main",
+   "start": 12185,
+   "end": 249685,
+   "calls": 21,
+   "requests": 16,
+   "tokens": 1179940,
+   "cost": 1.8984,
+   "outcome": "pr_created"
+  },
+  {
+   "id": "sub-explore",
+   "parent": "main",
+   "kind": "subagent",
+   "subagentType": "Explore",
+   "launchSeq": 4,
+   "start": 33323,
+   "end": 59447,
+   "calls": 5,
+   "requests": 4,
+   "tokens": 59740,
+   "cost": 0.0267,
+   "outcome": "completed"
+  }
+ ],
+ "tasks": [
+  {
+   "n": 1,
+   "id": "task:1",
+   "name": "Explore the request pipeline",
+   "source": "segments",
+   "startSeq": 0,
+   "endSeq": 18,
+   "startT": 12185,
+   "endT": 81985
+  },
+  {
+   "n": 2,
+   "id": "task:2",
+   "name": "Add a token-bucket rate limiter",
+   "source": "segments",
+   "startSeq": 19,
+   "endSeq": 41,
+   "startT": 99110,
+   "endT": 196333
+  },
+  {
+   "n": 3,
+   "id": "task:3",
+   "name": "Commit and open a PR",
+   "source": "segments",
+   "startSeq": 42,
+   "endSeq": 55,
+   "startT": 206863,
+   "endT": 249685
+  }
+ ],
+ "events": [
+  {
+   "seq": 0,
+   "t": 12185,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 1180,
+   "urls": 1,
+   "task": 1
+  },
+  {
+   "seq": 1,
+   "t": 18967,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 626,
+   "cw": 2506,
+   "cr": 14868,
+   "out": 420,
+   "cost": 0.03673,
+   "latency": 6642,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 756,
+   "task": 1
+  },
+  {
+   "seq": 2,
+   "t": 20551,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 1
+  },
+  {
+   "seq": 3,
+   "t": 26610,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 1109,
+   "cw": 4435,
+   "cr": 15456,
+   "out": 380,
+   "cost": 0.05049,
+   "latency": 6079,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 684,
+   "task": 1
+  },
+  {
+   "seq": 4,
+   "t": 28066,
+   "agent": "main",
+   "err": false,
+   "kind": "subagent",
+   "tool": "Task",
+   "subagentType": "Explore",
+   "child": "sub-explore",
+   "model": "claude-haiku-4-5",
+   "cat": "subagent",
+   "task": 1
+  },
+  {
+   "seq": 5,
+   "t": 33323,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-haiku-4-5",
+   "in": 200,
+   "cw": 802,
+   "cr": 7998,
+   "out": 300,
+   "cost": 0.0035,
+   "latency": 5184,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 540,
+   "task": 1
+  },
+  {
+   "seq": 6,
+   "t": 34077,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "search",
+   "tool": "Grep",
+   "verb": "rg",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "hit"
+    },
+    {
+     "file": 2,
+     "touch": "hit"
+    },
+    {
+     "file": 3,
+     "touch": "hit"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-haiku-4-5",
+   "task": 1
+  },
+  {
+   "seq": 7,
+   "t": 38304,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-haiku-4-5",
+   "in": 586,
+   "cw": 2346,
+   "cr": 9068,
+   "out": 260,
+   "cost": 0.00573,
+   "latency": 4276,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 468,
+   "task": 1
+  },
+  {
+   "seq": 8,
+   "t": 39986,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-haiku-4-5",
+   "task": 1
+  },
+  {
+   "seq": 9,
+   "t": 40666,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 2,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-haiku-4-5",
+   "task": 1
+  },
+  {
+   "seq": 10,
+   "t": 46722,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-haiku-4-5",
+   "in": 514,
+   "cw": 2055,
+   "cr": 13431,
+   "out": 280,
+   "cost": 0.00583,
+   "latency": 5918,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 504,
+   "task": 1
+  },
+  {
+   "seq": 11,
+   "t": 48894,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 3,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-haiku-4-5",
+   "task": 1
+  },
+  {
+   "seq": 12,
+   "t": 50985,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 4,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-haiku-4-5",
+   "task": 1
+  },
+  {
+   "seq": 13,
+   "t": 59447,
+   "agent": "sub-explore",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-haiku-4-5",
+   "in": 909,
+   "cw": 3637,
+   "cr": 16454,
+   "out": 900,
+   "cost": 0.0116,
+   "latency": 8640,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 1620,
+   "task": 1
+  },
+  {
+   "seq": 14,
+   "t": 68270,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 685,
+   "cw": 2742,
+   "cr": 22573,
+   "out": 520,
+   "cost": 0.04485,
+   "latency": 8964,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 936,
+   "task": 1
+  },
+  {
+   "seq": 15,
+   "t": 70306,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 5,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 1
+  },
+  {
+   "seq": 16,
+   "t": 71470,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 6,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 1
+  },
+  {
+   "seq": 17,
+   "t": 73088,
+   "agent": "main",
+   "err": false,
+   "kind": "mcp",
+   "server": "docs",
+   "tool": "search_docs",
+   "outBytes": 4200,
+   "dur": 820,
+   "cat": "mcp",
+   "model": "claude-opus-4-5",
+   "task": 1
+  },
+  {
+   "seq": 18,
+   "t": 81985,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 1021,
+   "cw": 4084,
+   "cr": 25895,
+   "out": 640,
+   "cost": 0.05958,
+   "latency": 8757,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 1152,
+   "task": 1
+  },
+  {
+   "seq": 19,
+   "t": 99110,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 420,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 20,
+   "t": 106779,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 2924,
+   "cw": 11696,
+   "cr": 57380,
+   "out": 1400,
+   "cost": 0.15141,
+   "latency": 7532,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 2520,
+   "task": 2
+  },
+  {
+   "seq": 21,
+   "t": 108273,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Write",
+   "targets": [
+    {
+     "file": 7,
+     "touch": "edit",
+     "op": "create"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 22,
+   "t": 114373,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 3076,
+   "cw": 12304,
+   "cr": 72620,
+   "out": 700,
+   "cost": 0.14609,
+   "latency": 6006,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 1260,
+   "task": 2
+  },
+  {
+   "seq": 23,
+   "t": 114969,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Edit",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 24,
+   "t": 116786,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Edit",
+   "targets": [
+    {
+     "file": 4,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 25,
+   "t": 125492,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 5636,
+   "cw": 22546,
+   "cr": 75818,
+   "out": 1100,
+   "cost": 0.2345,
+   "latency": 8512,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 1980,
+   "task": 2
+  },
+  {
+   "seq": 26,
+   "t": 126834,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Write",
+   "targets": [
+    {
+     "file": 8,
+     "touch": "edit",
+     "op": "create"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 27,
+   "t": 131762,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 4370,
+   "cw": 17482,
+   "cr": 95148,
+   "out": 300,
+   "cost": 0.18619,
+   "latency": 4835,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 540,
+   "task": 2
+  },
+  {
+   "seq": 28,
+   "t": 140215,
+   "agent": "main",
+   "err": true,
+   "kind": "verify",
+   "tool": "Bash",
+   "verb": "npm test",
+   "cat": "test",
+   "errClass": "exit_code",
+   "exitCode": 1,
+   "dur": 14200,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 29,
+   "t": 145596,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 3305,
+   "cw": 13221,
+   "cr": 112474,
+   "out": 520,
+   "cost": 0.16839,
+   "latency": 5442,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 936,
+   "task": 2
+  },
+  {
+   "seq": 30,
+   "t": 147849,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "Read",
+   "targets": [
+    {
+     "file": 7,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 31,
+   "t": 148601,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Edit",
+   "targets": [
+    {
+     "file": 7,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 32,
+   "t": 154568,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 7073,
+   "cw": 28294,
+   "cr": 102633,
+   "out": 260,
+   "cost": 0.27002,
+   "latency": 6117,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 468,
+   "task": 2
+  },
+  {
+   "seq": 33,
+   "t": 162367,
+   "agent": "main",
+   "err": false,
+   "kind": "verify",
+   "tool": "Bash",
+   "verb": "npm test",
+   "cat": "test",
+   "retryOf": 28,
+   "attempt": 2,
+   "dur": 12800,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 34,
+   "t": 162436,
+   "agent": "main",
+   "err": false,
+   "kind": "delay",
+   "cause": "tool",
+   "ms": 12800,
+   "ref": 33,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 35,
+   "t": 163892,
+   "agent": "main",
+   "err": true,
+   "kind": "error",
+   "source": "llm",
+   "errClass": "overloaded",
+   "retry": true,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 36,
+   "t": 184856,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 3261,
+   "cw": 13042,
+   "cr": 132697,
+   "out": 480,
+   "cost": 0.17617,
+   "latency": 21000,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 864,
+   "task": 2
+  },
+  {
+   "seq": 37,
+   "t": 184952,
+   "agent": "main",
+   "err": false,
+   "kind": "delay",
+   "cause": "llm",
+   "ms": 21000,
+   "ref": 36,
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 38,
+   "t": 188847,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "tsc",
+   "dur": 6100,
+   "cat": "shell",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 39,
+   "t": 192931,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-opus-4-5",
+   "in": 6216,
+   "cw": 24862,
+   "cr": 129922,
+   "out": 220,
+   "cost": 0.25693,
+   "latency": 4281,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 396,
+   "task": 2
+  },
+  {
+   "seq": 40,
+   "t": 195269,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Edit",
+   "targets": [
+    {
+     "file": 5,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 41,
+   "t": 196333,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "Write",
+   "targets": [
+    {
+     "file": 9,
+     "touch": "edit",
+     "op": "create"
+    }
+   ],
+   "cat": "file",
+   "model": "claude-opus-4-5",
+   "task": 2
+  },
+  {
+   "seq": 42,
+   "t": 206863,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 160,
+   "model": "claude-opus-4-5",
+   "task": 3
+  },
+  {
+   "seq": 43,
+   "t": 208162,
+   "agent": "main",
+   "err": false,
+   "kind": "compaction",
+   "trigger": "auto",
+   "preTokens": 168400,
+   "postTokens": 23100,
+   "model": "claude-opus-4-5",
+   "task": 3
+  },
+  {
+   "seq": 44,
+   "t": 208162,
+   "agent": "main",
+   "err": false,
+   "kind": "model_switch",
+   "from": "claude-opus-4-5",
+   "to": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 45,
+   "t": 214154,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-sonnet-4-5",
+   "in": 629,
+   "cw": 2515,
+   "cr": 20856,
+   "out": 380,
+   "cost": 0.02328,
+   "latency": 6151,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 684,
+   "task": 3
+  },
+  {
+   "seq": 46,
+   "t": 217908,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "git",
+   "vcs": {
+    "provider": "git",
+    "action": "status",
+    "repo": "acme/api"
+   },
+   "cat": "vcs",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 47,
+   "t": 221980,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "git",
+   "vcs": {
+    "provider": "git",
+    "action": "diff",
+    "repo": "acme/api"
+   },
+   "cat": "vcs",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 48,
+   "t": 230980,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-sonnet-4-5",
+   "in": 598,
+   "cw": 2392,
+   "cr": 26010,
+   "out": 540,
+   "cost": 0.02667,
+   "latency": 8959,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 972,
+   "task": 3
+  },
+  {
+   "seq": 49,
+   "t": 234803,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "git",
+   "vcs": {
+    "provider": "git",
+    "action": "commit",
+    "repo": "acme/api"
+   },
+   "cat": "vcs",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 50,
+   "t": 234926,
+   "agent": "main",
+   "err": false,
+   "kind": "commit",
+   "repo": "acme/api",
+   "sha": "9d41c07be2a1",
+   "files": 6,
+   "ins": 214,
+   "del": 12,
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 51,
+   "t": 236308,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "git",
+   "vcs": {
+    "provider": "git",
+    "action": "push",
+    "repo": "acme/api"
+   },
+   "cat": "vcs",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 52,
+   "t": 244856,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-sonnet-4-5",
+   "in": 928,
+   "cw": 3711,
+   "cr": 26361,
+   "out": 820,
+   "cost": 0.03691,
+   "latency": 8464,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 1476,
+   "task": 3
+  },
+  {
+   "seq": 53,
+   "t": 246445,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "gh",
+   "vcs": {
+    "provider": "github",
+    "action": "pr_create",
+    "repo": "acme/api",
+    "number": 142
+   },
+   "cat": "vcs",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 54,
+   "t": 247148,
+   "agent": "main",
+   "err": false,
+   "kind": "pr_comment",
+   "repo": "acme/api",
+   "number": 142,
+   "url": "https://github.com/acme/api/pull/142",
+   "model": "claude-sonnet-4-5",
+   "task": 3
+  },
+  {
+   "seq": 55,
+   "t": 249685,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "claude-sonnet-4-5",
+   "in": 994,
+   "cw": 3976,
+   "cr": 28030,
+   "out": 260,
+   "cost": 0.0302,
+   "latency": 2600,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": true,
+   "textChars": 468,
+   "task": 3
+  }
+ ]
+}

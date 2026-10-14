@@ -1,0 +1,1067 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Entelligence-AI/agentplay/schema/agentplay-v1.schema.json",
+  "title": "agentplay/v1",
+  "description": "A redacted, chronological replay of one coding-agent session. Contains no prompt text, model output, tool inputs or outputs, file contents or command arguments. See docs/format.md.",
+  "type": "object",
+  "required": [
+    "schema",
+    "session",
+    "totals",
+    "events"
+  ],
+  "properties": {
+    "schema": {
+      "enum": [
+        "agentplay/v1",
+        "entelligence.session-map/v1"
+      ]
+    },
+    "session": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "agentTool": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "claude-code | codex | cursor | copilot | copilot-vscode | opencode | kiro | ..."
+        },
+        "cliVersion": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "durationMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "pathMode": {
+          "enum": [
+            "relative",
+            "dirs_only",
+            "hashed",
+            null
+          ]
+        },
+        "truncated": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "outcome": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "pr_created | verified | blocked | interrupted | unresolved_errors | completed | incomplete"
+        },
+        "role": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "root | subagent | helper | unknown"
+        },
+        "parentSessionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "id",
+        "startedAt"
+      ]
+    },
+    "totals": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "requests": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "userTurns": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "subagents": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "errors": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "costUsd": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "filesTouched": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "retries": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "delays": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "delayMs": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "maxContext": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "compactions": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "llmLatencyP50": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "llmLatencyP95": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "outputTokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prsCreated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "filesCreated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "filesDeleted": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tasks": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "commits": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prsMerged": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prsClosed": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "prComments": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ticketsCreated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ticketsUpdated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "artifacts": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "skillsCreated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "skillsUpdated": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "modelSwitches": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "promptChars": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "promptImages": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "promptUrls": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "errorsBySource": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        },
+        "errorsByClass": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "repos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "remote": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "name"
+        ]
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "repo": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "reads": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "edits": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "hits": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "first": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "op": {
+            "enum": [
+              "create",
+              "modify",
+              "delete",
+              "rename-from",
+              "rename-to",
+              null
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "repo",
+          "path"
+        ]
+      }
+    },
+    "prs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "repo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "number": {
+            "type": "number"
+          },
+          "url": {
+            "type": "string"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "state": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "provider",
+          "number",
+          "url",
+          "seq"
+        ]
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parent": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "enum": [
+              "main",
+              "subagent",
+              null
+            ]
+          },
+          "subagentType": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "launchSeq": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "start": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "end": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "calls": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "requests": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "tokens": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "cost": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "id"
+        ]
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer"
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "enum": [
+              "segments",
+              "turns",
+              null
+            ]
+          },
+          "startSeq": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "endSeq": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "startT": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "endT": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "firstTurn": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "lastTurn": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "required": [
+          "n"
+        ]
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/event"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "target": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "scope": {
+          "const": "outside"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "touch": {
+          "enum": [
+            "hit",
+            "read",
+            "edit"
+          ]
+        },
+        "op": {
+          "enum": [
+            "create",
+            "modify",
+            "delete",
+            "rename-from",
+            "rename-to",
+            null
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "touch"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "t": {
+          "type": "number",
+          "minimum": 0,
+          "description": "ms since the first event"
+        },
+        "kind": {
+          "type": "string",
+          "description": "read|search|edit|exec|verify|mcp|skill|subagent|web|tool|llm|error|delay|user|compaction|commit|pr_merge|pr_close|pr_comment|ticket|artifact|skill_write|model_switch"
+        },
+        "agent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "'main' or a subagent id from agents[]"
+        },
+        "err": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tool": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verb": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "shell verb only, e.g. 'git log'; never arguments"
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/target"
+          }
+        },
+        "vcs": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string"
+            },
+            "action": {
+              "type": "string"
+            },
+            "repo": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "number": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true,
+          "required": [
+            "provider",
+            "action"
+          ]
+        },
+        "cat": {
+          "enum": [
+            "file",
+            "shell",
+            "vcs",
+            "test",
+            "cloud",
+            "http",
+            "fs",
+            "package",
+            "build",
+            "mcp",
+            "subagent",
+            "skill",
+            "web",
+            "tool",
+            null
+          ]
+        },
+        "outBytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "dur": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "server": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "skill": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "subagentType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "child": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "in": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cw": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cr": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "out": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cost": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "chars": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "errClass": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "exitCode": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "retryOf": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "attempt": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "latency": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stop": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "thinking": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "toolCalls": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "textChars": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "source": {
+          "enum": [
+            "llm",
+            "hook",
+            "orchestration",
+            "tool",
+            "mcp",
+            null
+          ]
+        },
+        "hook": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hookEvent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "srcUuid": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "cause": {
+          "enum": [
+            "tool",
+            "subagent",
+            "llm",
+            "stall",
+            null
+          ]
+        },
+        "ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ref": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "trigger": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preTokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "postTokens": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "task": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "images": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "urls": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "repo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sha": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "files": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ins": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "del": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "number": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tracker": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bytes": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": true,
+      "required": [
+        "t",
+        "kind"
+      ]
+    }
+  }
+}

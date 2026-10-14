@@ -1,0 +1,579 @@
+{
+ "schema": "agentplay/v1",
+ "session": {
+  "id": "local:codex:0199a3b2-demo-4f0c-8e55-000000000002",
+  "agentTool": "codex",
+  "cliVersion": "0.44.0",
+  "startedAt": "2026-09-23T09:41:03.000Z",
+  "durationMs": 132039,
+  "models": [
+   "gpt-5-codex"
+  ],
+  "pathMode": "relative",
+  "truncated": false,
+  "outcome": "verified",
+  "role": "root",
+  "parentSessionId": null
+ },
+ "totals": {
+  "calls": 12,
+  "requests": 11,
+  "userTurns": 2,
+  "subagents": 0,
+  "errors": 2,
+  "tokens": 314060,
+  "costUsd": 0.0851,
+  "filesTouched": 4,
+  "prsCreated": 0,
+  "filesCreated": 0,
+  "filesDeleted": 0,
+  "errorsBySource": {
+   "tool": 2
+  },
+  "errorsByClass": {
+   "exit_code": 2
+  },
+  "retries": 1,
+  "delays": 0,
+  "delayMs": 0,
+  "maxContext": 38000,
+  "compactions": 0,
+  "llmLatencyP50": 5776,
+  "llmLatencyP95": 8190,
+  "outputTokens": 4060,
+  "tasks": 2,
+  "commits": 1
+ },
+ "repos": [
+  {
+   "id": "r0",
+   "name": "acme/web",
+   "remote": "git@github.com:acme/web.git"
+  },
+  {
+   "id": "r1",
+   "name": "acme/ui-kit",
+   "remote": "git@github.com:acme/ui-kit.git"
+  }
+ ],
+ "files": [
+  {
+   "id": 0,
+   "repo": "r0",
+   "path": "src/lib/formatDate.ts",
+   "reads": 1,
+   "edits": 1,
+   "hits": 1,
+   "first": 2,
+   "op": "modify"
+  },
+  {
+   "id": 1,
+   "repo": "r0",
+   "path": "src/lib/formatDate.test.ts",
+   "reads": 1,
+   "edits": 1,
+   "hits": 1,
+   "first": 2,
+   "op": "modify"
+  },
+  {
+   "id": 2,
+   "repo": "r0",
+   "path": "src/components/OrderRow.tsx",
+   "reads": 0,
+   "edits": 0,
+   "hits": 1,
+   "first": 2
+  },
+  {
+   "id": 3,
+   "repo": "r1",
+   "path": "src/date/index.ts",
+   "reads": 1,
+   "edits": 0,
+   "hits": 0,
+   "first": 11
+  }
+ ],
+ "prs": [],
+ "agents": [
+  {
+   "id": "main",
+   "parent": null,
+   "kind": "main",
+   "start": 5484,
+   "end": 132039,
+   "calls": 12,
+   "requests": 11,
+   "tokens": 314060,
+   "cost": 0.0851,
+   "outcome": "verified"
+  }
+ ],
+ "tasks": [
+  {
+   "n": 1,
+   "id": "task:1",
+   "name": "Reproduce the flaky date test",
+   "source": "segments",
+   "startSeq": 0,
+   "endSeq": 13,
+   "startT": 5484,
+   "endT": 64307
+  },
+  {
+   "n": 2,
+   "id": "task:2",
+   "name": "Fix the timezone handling",
+   "source": "segments",
+   "startSeq": 14,
+   "endSeq": 25,
+   "startT": 70822,
+   "endT": 132039
+  }
+ ],
+ "events": [
+  {
+   "seq": 0,
+   "t": 5484,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 640,
+   "task": 1
+  },
+  {
+   "seq": 1,
+   "t": 11693,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 746,
+   "cw": 2983,
+   "cr": 10271,
+   "out": 300,
+   "cost": 0.00522,
+   "latency": 6287,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 540,
+   "task": 1
+  },
+  {
+   "seq": 2,
+   "t": 14245,
+   "agent": "main",
+   "err": false,
+   "kind": "search",
+   "tool": "shell",
+   "verb": "rg",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "hit"
+    },
+    {
+     "file": 1,
+     "touch": "hit"
+    },
+    {
+     "file": 2,
+     "touch": "hit"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 3,
+   "t": 19929,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 806,
+   "cw": 3225,
+   "cr": 12969,
+   "out": 260,
+   "cost": 0.00523,
+   "latency": 5503,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 468,
+   "task": 1
+  },
+  {
+   "seq": 4,
+   "t": 22146,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "shell",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 5,
+   "t": 22566,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "shell",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 6,
+   "t": 26245,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 581,
+   "cw": 2323,
+   "cr": 18096,
+   "out": 240,
+   "cost": 0.00539,
+   "latency": 3845,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 432,
+   "task": 1
+  },
+  {
+   "seq": 7,
+   "t": 42056,
+   "agent": "main",
+   "err": true,
+   "kind": "verify",
+   "tool": "shell",
+   "verb": "pnpm vitest",
+   "cat": "test",
+   "errClass": "exit_code",
+   "exitCode": 1,
+   "dur": 9100,
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 8,
+   "t": 47929,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 538,
+   "cw": 2153,
+   "cr": 21309,
+   "out": 380,
+   "cost": 0.00714,
+   "latency": 5776,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 684,
+   "task": 1
+  },
+  {
+   "seq": 9,
+   "t": 49111,
+   "agent": "main",
+   "err": true,
+   "kind": "exec",
+   "tool": "shell",
+   "verb": "pnpm",
+   "errClass": "exit_code",
+   "exitCode": 1,
+   "cat": "shell",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 10,
+   "t": 56192,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 986,
+   "cw": 3942,
+   "cr": 21072,
+   "out": 420,
+   "cost": 0.00807,
+   "latency": 6887,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 756,
+   "task": 1
+  },
+  {
+   "seq": 11,
+   "t": 57061,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "shell",
+   "targets": [
+    {
+     "file": 3,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 12,
+   "t": 59322,
+   "agent": "main",
+   "err": false,
+   "kind": "web",
+   "tool": "web_search",
+   "host": "developer.mozilla.org",
+   "cat": "web",
+   "model": "gpt-5-codex",
+   "task": 1
+  },
+  {
+   "seq": 13,
+   "t": 64307,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 1404,
+   "cw": 5615,
+   "cr": 22981,
+   "out": 520,
+   "cost": 0.00983,
+   "latency": 4872,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 936,
+   "task": 1
+  },
+  {
+   "seq": 14,
+   "t": 70822,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 210,
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 15,
+   "t": 78156,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 876,
+   "cw": 3506,
+   "cr": 27618,
+   "out": 900,
+   "cost": 0.01355,
+   "latency": 7331,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 1620,
+   "task": 2
+  },
+  {
+   "seq": 16,
+   "t": 80637,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "apply_patch",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 17,
+   "t": 82720,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "apply_patch",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 18,
+   "t": 90526,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 707,
+   "cw": 2829,
+   "cr": 31464,
+   "out": 300,
+   "cost": 0.00782,
+   "latency": 7748,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 540,
+   "task": 2
+  },
+  {
+   "seq": 19,
+   "t": 104077,
+   "agent": "main",
+   "err": false,
+   "kind": "verify",
+   "tool": "shell",
+   "verb": "pnpm vitest",
+   "cat": "test",
+   "retryOf": 7,
+   "attempt": 2,
+   "dur": 8800,
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 20,
+   "t": 107731,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 996,
+   "cw": 3982,
+   "cr": 31022,
+   "out": 200,
+   "cost": 0.00712,
+   "latency": 3730,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 360,
+   "task": 2
+  },
+  {
+   "seq": 21,
+   "t": 117455,
+   "agent": "main",
+   "err": false,
+   "kind": "verify",
+   "tool": "shell",
+   "verb": "pnpm lint",
+   "cat": "build",
+   "dur": 7400,
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 22,
+   "t": 125769,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 747,
+   "cw": 2986,
+   "cr": 33267,
+   "out": 360,
+   "cost": 0.00869,
+   "latency": 8190,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 648,
+   "task": 2
+  },
+  {
+   "seq": 23,
+   "t": 129960,
+   "agent": "main",
+   "err": false,
+   "kind": "exec",
+   "tool": "Bash",
+   "verb": "git",
+   "vcs": {
+    "provider": "git",
+    "action": "commit",
+    "repo": "acme/web"
+   },
+   "cat": "vcs",
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 24,
+   "t": 130058,
+   "agent": "main",
+   "err": false,
+   "kind": "commit",
+   "repo": "acme/web",
+   "sha": "3be07f19ac44",
+   "files": 2,
+   "ins": 18,
+   "del": 7,
+   "model": "gpt-5-codex",
+   "task": 2
+  },
+  {
+   "seq": 25,
+   "t": 132039,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "gpt-5-codex",
+   "in": 749,
+   "cw": 2996,
+   "cr": 34255,
+   "out": 180,
+   "cost": 0.00702,
+   "latency": 2100,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 324,
+   "task": 2
+  }
+ ]
+}

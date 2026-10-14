@@ -1,0 +1,242 @@
+{
+ "schema": "agentplay/v1",
+ "session": {
+  "id": "local:cursor:c1d2e3f4-demo-4a5b-9c8d-000000000003",
+  "agentTool": "cursor",
+  "cliVersion": "1.7",
+  "startedAt": "2026-09-22T17:20:44.000Z",
+  "durationMs": 30584,
+  "models": [
+   "cursor-auto"
+  ],
+  "pathMode": "relative",
+  "truncated": false,
+  "outcome": "completed",
+  "role": "root",
+  "parentSessionId": null
+ },
+ "totals": {
+  "calls": 4,
+  "requests": 3,
+  "userTurns": 1,
+  "subagents": 0,
+  "errors": 0,
+  "tokens": 0,
+  "costUsd": 0,
+  "filesTouched": 2,
+  "prsCreated": 0,
+  "filesCreated": 0,
+  "filesDeleted": 0,
+  "errorsBySource": {},
+  "errorsByClass": {},
+  "retries": 0,
+  "delays": 0,
+  "delayMs": 0,
+  "maxContext": 0,
+  "compactions": 0,
+  "llmLatencyP50": 2817,
+  "llmLatencyP95": 7824,
+  "outputTokens": 0,
+  "tasks": 1,
+  "commits": 0
+ },
+ "repos": [
+  {
+   "id": "r0",
+   "name": "acme/web",
+   "remote": "git@github.com:acme/web.git"
+  }
+ ],
+ "files": [
+  {
+   "id": 0,
+   "repo": "r0",
+   "path": "src/pages/cart.tsx",
+   "reads": 0,
+   "edits": 1,
+   "hits": 1,
+   "first": 2,
+   "op": "modify"
+  },
+  {
+   "id": 1,
+   "repo": "r0",
+   "path": "src/i18n/en.json",
+   "reads": 1,
+   "edits": 1,
+   "hits": 1,
+   "first": 2,
+   "op": "modify"
+  }
+ ],
+ "prs": [],
+ "agents": [
+  {
+   "id": "main",
+   "parent": null,
+   "kind": "main",
+   "start": 12261,
+   "end": 30584,
+   "calls": 4,
+   "requests": 3,
+   "tokens": 0,
+   "cost": 0,
+   "outcome": "completed"
+  }
+ ],
+ "tasks": [
+  {
+   "n": 1,
+   "id": "task:1",
+   "name": "Update the empty-cart copy",
+   "source": "segments",
+   "startSeq": 0,
+   "endSeq": 7,
+   "startT": 12261,
+   "endT": 30584
+  }
+ ],
+ "events": [
+  {
+   "seq": 0,
+   "t": 12261,
+   "agent": "main",
+   "err": false,
+   "kind": "user",
+   "chars": 180,
+   "task": 1
+  },
+  {
+   "seq": 1,
+   "t": 15174,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "cursor-auto",
+   "in": 0,
+   "cw": 0,
+   "cr": 0,
+   "out": 0,
+   "cost": 0,
+   "latency": 2817,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 396,
+   "task": 1
+  },
+  {
+   "seq": 2,
+   "t": 16010,
+   "agent": "main",
+   "err": false,
+   "kind": "search",
+   "tool": "Grep",
+   "verb": "grep",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "hit"
+    },
+    {
+     "file": 1,
+     "touch": "hit"
+    }
+   ],
+   "cat": "file",
+   "model": "cursor-auto",
+   "task": 1
+  },
+  {
+   "seq": 3,
+   "t": 17704,
+   "agent": "main",
+   "err": false,
+   "kind": "read",
+   "tool": "read_file",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "read"
+    }
+   ],
+   "cat": "file",
+   "model": "cursor-auto",
+   "task": 1
+  },
+  {
+   "seq": 4,
+   "t": 25584,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "cursor-auto",
+   "in": 0,
+   "cw": 0,
+   "cr": 0,
+   "out": 0,
+   "cost": 0,
+   "latency": 7824,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 468,
+   "task": 1
+  },
+  {
+   "seq": 5,
+   "t": 27076,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "edit_file",
+   "targets": [
+    {
+     "file": 1,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "cursor-auto",
+   "task": 1
+  },
+  {
+   "seq": 6,
+   "t": 28795,
+   "agent": "main",
+   "err": false,
+   "kind": "edit",
+   "tool": "edit_file",
+   "targets": [
+    {
+     "file": 0,
+     "touch": "edit",
+     "op": "modify"
+    }
+   ],
+   "cat": "file",
+   "model": "cursor-auto",
+   "task": 1
+  },
+  {
+   "seq": 7,
+   "t": 30584,
+   "agent": "main",
+   "err": false,
+   "kind": "llm",
+   "model": "cursor-auto",
+   "in": 0,
+   "cw": 0,
+   "cr": 0,
+   "out": 0,
+   "cost": 0,
+   "latency": 1900,
+   "stop": "tool_use",
+   "toolCalls": 1,
+   "thinking": false,
+   "textChars": 252,
+   "task": 1
+  }
+ ]
+}

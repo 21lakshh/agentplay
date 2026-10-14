@@ -1,0 +1,13 @@
+Agentplay
+Copyright 2026 Entelligence AI, Inc.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes ideas and small, clearly scoped data tables from the
+following open-source projects. No source file from either project is copied
+or linked; see THIRD_PARTY_NOTICES.md for exactly what was used.
+
+  * SuperBased Observer (https://github.com/superbasedapp/observer)
+    Apache License 2.0, Copyright 2026 Gaja AI.
+  * agentacct (https://github.com/mikehasa/agentacct)
+    MIT License, Copyright (c) 2026 agentacct contributors.

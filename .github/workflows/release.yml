@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # Fail early when the tag, pyproject.toml and __version__ disagree.
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: tag matches package versions
+        run: |
+          python - <<'EOF'
+          import os, re, sys, tomllib
+          tag = os.environ["GITHUB_REF_NAME"].removeprefix("v")
+          with open("python/pyproject.toml", "rb") as f:
+              pyproject = tomllib.load(f)["project"]["version"]
+          with open("python/src/agentplay/__init__.py", encoding="utf-8") as f:
+              init = re.search(r'^__version__\s*=\s*"([^"]+)"', f.read(), re.M).group(1)
+          print(f"tag={tag} pyproject={pyproject} __init__={init}")
+          if not (tag == pyproject == init):
+              sys.exit("tag, python/pyproject.toml and agentplay.__version__ must all match")
+          EOF
+
+  # Same checks as every PR: tests on 3 OSes x 4 Pythons, viewer tests, and the
+  # `package` job, which builds the wheel and sdist, smoke-tests the wheel and
+  # uploads both as the `dist` artifact.
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  # Publishes the `dist` artifact built by `ci`. Nothing is built here, so only
+  # the download and the publish action run with the OIDC token.
+  pypi:
+    needs: [version, ci]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/agentplay
+    permissions:
+      id-token: write # PyPI trusted publishing and attestations
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: python/dist/
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: python/dist/

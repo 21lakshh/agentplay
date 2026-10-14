@@ -1,0 +1,342 @@
+/* Design tokens (ds-*) for the Session Explorer, light + dark. Theme is the
+   `.dark` class on <html>, set from prefers-color-scheme (or ?theme=) by the
+   inline script in index.html. */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
+
+:root {
+  color-scheme: light;
+  --font-inter: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-jetbrains-mono: 'JetBrains Mono Variable', 'JetBrains Mono';
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Easing - stronger than browser built-ins; purposeful curves */
+    --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1); /* entries, reveals */
+
+    /* Duration scale - UI animations MUST stay ≤300ms */
+    --motion-dur-instant: 80ms; /* press feedback, immediate toggle */
+
+    --muted: 210 40% 96.1%;
+
+    --border: 214.3 31.8% 91.4%;
+
+    --radius: 0.5rem;
+
+    /* Primitives */
+    --primitive-brand-green-100: #f6fbed;
+    --primitive-brand-green-200: #e7f2d4;
+    --primitive-brand-green-300: #d6e7bb;
+    --primitive-brand-green-400: #bdd29b;
+    --primitive-brand-green-500: #9ab175;
+    --primitive-brand-green-600: #72884e;
+    --primitive-brand-green-700: #56653e;
+    --primitive-brand-green-800: #3a422c;
+    --primitive-brand-green-900: #262a1f;
+    --primitive-brand-green-950: #13150f;
+    --primitive-white-off-white: #faf9f5;
+    --primitive-white-solid: #ffffff;
+    --primitive-gray-50: #f7f7f7;
+    --primitive-gray-100: #f5f4f5;
+    --primitive-gray-200: #dbdbdb;
+    --primitive-gray-300: #bdbdbd;
+    --primitive-gray-400: #989898;
+    --primitive-gray-500: #7b7b7b;
+    --primitive-gray-800: #404040;
+    --primitive-gray-900: #2c2c2c;
+    --primitive-purple-100: #ece8ff;
+    --primitive-purple-700: #6a1be0;
+    --primitive-red-100: #ffe5e1;
+    --primitive-red-300: #ffaea2;
+    --primitive-red-600: #e23a20;
+    --primitive-red-700: #cc3018;
+    --primitive-red-900: #82281a;
+    --primitive-orange-50: #fffdf7;
+    --primitive-orange-100: #fffaeb;
+    --primitive-orange-700: #e06800;
+    --primitive-orange-800: #a34b09;
+    --primitive-green-50: #f2fcf1;
+    --primitive-green-100: #defbdd;
+    --primitive-green-600: #1c9e1b;
+    --primitive-green-900: #19621a;
+    --primitive-blue-700: #194ad2;
+
+    /* Design system semantic color tokens - aliases over primitives.
+       Primitives flip in `.dark`, so these auto-flip too. Mirrors the
+       `ds.*` mapping in tailwind.config.ts so `var(--ds-text-subtle)` works
+       in JS / inline styles / SVG fill the same as the `text-ds-text-subtle`
+       Tailwind utility. */
+    --ds-gray-subtlest: var(--primitive-gray-100);
+    --ds-gray-subtler: var(--primitive-gray-300);
+
+    --ds-border-subtler: var(--primitive-gray-200);
+    --ds-border-default: var(--primitive-gray-800);
+    --ds-border-darker: var(--primitive-gray-900);
+
+    --ds-text-subtler: var(--primitive-gray-300);
+    --ds-text-subtle: var(--primitive-gray-500);
+    --ds-text-default: var(--primitive-gray-800);
+    --ds-text-darker: var(--primitive-gray-900);
+
+    --ds-surface-white: var(--primitive-white-solid);
+
+    /* The subtly brand-tinted RAISED surface (a nested card, a hover fill, a
+       tinted callout). SELECTED per mode, because the brand ramp inverts: in
+       dark, brand-green-100 is darker than the card it sits on, so dark mode
+       takes its own value one clear step above the card. */
+    --ds-brand-lightest: var(--primitive-brand-green-100);
+    --ds-brand-subtlest: var(--primitive-brand-green-200);
+    --ds-brand-subtler: var(--primitive-brand-green-500);
+    --ds-brand-subtle: var(--primitive-brand-green-700);
+    --ds-brand-default: var(--primitive-brand-green-800);
+
+    /* SELECTED per mode, same reasoning as --ds-success-subtlest below: in
+       dark, orange-100 is a saturated warm brown that made the warning chip
+       the loudest thing on a card; orange-50 recedes and keeps AA contrast. */
+    --ds-warning-subtlest: var(--primitive-orange-100);
+    --ds-warning-default: var(--primitive-orange-700);
+
+    /* Success was the only semantic family missing its first rung, so anything
+       wanting a subtle success tint had to reach for `-subtler` and rendered a
+       rung heavier than every sibling variant. Most visible on Badge in dark
+       mode, where `-subtler` resolves to a solid #19621a and the chip was the
+       loudest thing in the row.
+
+       SELECTED per mode, not inverted -- same reasoning as the chart series
+       block in `.dark`. The green primitive ramp inverts across a different
+       lightness band than red and purple do, so one primitive cannot serve both
+       modes here: green-50 is #f2fcf1 in light, which is the page background
+       and leaves the chip with no container at all. Light takes green-100 for a
+       readable tint, dark takes green-50 for a properly recessed one. */
+    --ds-success-subtlest: var(--primitive-green-100);
+    --ds-success-default: var(--primitive-green-600);
+
+    --ds-danger-default: var(--primitive-red-600);
+
+    --ds-purple-subtlest: var(--primitive-purple-100);
+    --ds-purple-default: var(--primitive-purple-700);
+
+    --ds-blue-default: var(--primitive-blue-700);
+
+    /* Chart series palette (`--ds-series-1..8`, categorical identity only).
+       Fixed slot order, assigned in sequence, never cycled and never
+       re-ordered. The slots sit in one mid-chroma band around the brand sage
+       so any subset agrees with the rest of the page. Hue ORDER is identical
+       across themes so a series keeps its identity when the theme flips; only
+       the lightness step is re-picked per theme. */
+    --ds-series-1: #6f8a4b;
+    --ds-series-2: #3d6e92;
+    --ds-series-3: #8b4e99;
+    --ds-series-4: #8a6b21;
+    --ds-series-5: #a35638;
+    --ds-series-6: #2f7f76;
+    --ds-series-7: #5b569e;
+    --ds-series-8: #9e4560;
+    --ds-series-other: var(--primitive-gray-400);
+    /* Session Explorer prompt marks (lime): identity-free, so not a series. */
+    --ds-session-prompt: #65a30d;
+
+    /* Chart chrome - one place for grid, axis ink and hover cursor. */
+    --ds-chart-grid: var(--primitive-gray-100);
+    --ds-chart-axis: var(--primitive-gray-500);
+    --ds-chart-cursor: var(--ds-brand-subtler);
+
+    /* Neutral warm-stone intensity ramp (few -> many): darkness only, no hue,
+       so it never reads as a status colour. Tuned per theme. */
+    --ds-heatmap-1: #e2e0dd;
+    --ds-heatmap-2: #c2bfba;
+    --ds-heatmap-3: #9b9791;
+    --ds-heatmap-4: #6e6a64;
+    --ds-heatmap-5: #45423d;
+
+    /* Design system typography tokens (text/body, text/title, text/code) */
+    --ds-font-body: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    --ds-font-code: var(--font-jetbrains-mono), ui-monospace, monospace;
+    --ds-text-body-xs-medium: 12px;
+    --ds-text-body-xs-medium-lh: 16px;
+    --ds-text-body-xs-semibold: 12px;
+    --ds-text-body-xs-semibold-lh: 16px;
+    --ds-text-body-sm-semibold: 14px;
+    --ds-text-body-sm-semibold-lh: 1.45;
+  }
+
+  .dark {
+    /* See the light-mode note: the subtlest success rung is picked per mode.
+       In dark, green-100 is #19621a -- a solid mid-green that made the Badge
+       read as a filled button rather than a chip. */
+    --ds-success-subtlest: var(--primitive-green-50);
+    --ds-warning-subtlest: var(--primitive-orange-50);
+    --ds-brand-lightest: #1f221b;
+
+    /* Chart series palette - dark mode is SELECTED, not an inversion of the
+       light steps: each slot is re-picked inside the dark lightness band and
+       re-validated against the dark chart surface (#1B1B1B). Worst adjacent
+       pair deuteranopia dE 18.2, normal-vision dE 25.9. Slot order is
+       identical to light so a series keeps its identity across themes. */
+    --ds-series-1: #a9c084;
+    --ds-series-2: #8fb8d8;
+    --ds-series-3: #c79bd4;
+    --ds-series-4: #dcc48a;
+    --ds-series-5: #d89478;
+    --ds-series-6: #7fc7be;
+    --ds-series-7: #a8a4dc;
+    --ds-series-8: #d98fa6;
+    --ds-session-prompt: #a3e635;
+
+    /* Activity heatmap - dark-mode neutral stone ramp (dim → bright stone on
+       near-black); see the :root block for the light values and rationale. */
+    --ds-heatmap-1: #3a3a38;
+    --ds-heatmap-2: #55534f;
+    --ds-heatmap-3: #78756f;
+    --ds-heatmap-4: #9e9b94;
+    --ds-heatmap-5: #cac7c0;
+
+    --muted: 0 0% 17%;
+
+    --border: 0 0% 17%;
+
+    /* Primitives, dark mode */
+    --primitive-brand-green-100: #13150f;
+    --primitive-brand-green-200: #262a1f;
+    --primitive-brand-green-300: #3a422c;
+    --primitive-brand-green-400: #56653e;
+    --primitive-brand-green-500: #72884e;
+    --primitive-brand-green-600: #9ab175;
+    --primitive-brand-green-700: #bdd29b;
+    --primitive-brand-green-800: #d6e7bb;
+    --primitive-brand-green-900: #e7f2d4;
+    --primitive-brand-green-950: #f6fbed;
+    --primitive-white-off-white: #161616;
+    --primitive-white-solid: #1b1b1b;
+    --primitive-gray-50: #191919;
+    --primitive-gray-100: #2a2a2a;
+    --primitive-gray-200: #404040;
+    --primitive-gray-300: #525252;
+    --primitive-gray-400: #656565;
+    --primitive-gray-500: #7b7b7b;
+    --primitive-gray-800: #dbdbdb;
+    --primitive-gray-900: #efeef0;
+    /* Purple: dark-mode values of the semantic purple ramp. */
+    --primitive-purple-100: #3b2165;
+    --primitive-purple-700: #c2b1ff;
+    --primitive-red-100: #211412;
+    --primitive-red-300: #933f32;
+    --primitive-red-600: #e08a7d;
+    --primitive-red-700: #e29387;
+    --primitive-red-900: #f4d7d3;
+    /* Orange + green primitives fully invert in dark mode. */
+    --primitive-orange-50: #2a1704;
+    --primitive-orange-100: #471e03;
+    --primitive-orange-700: #ffc966;
+    --primitive-orange-800: #ffe4a3;
+    --primitive-green-50: #072c08;
+    --primitive-green-100: #19621a;
+    --primitive-green-600: #51d850;
+    --primitive-green-900: #defbdd;
+    /* Blue: brighter in dark so accent text passes AA on dark surfaces. */
+    --primitive-blue-700: #b3c6f9;
+  }
+}
+
+body {
+  --ds-font-code: var(--font-jetbrains-mono), ui-monospace, monospace;
+  margin: 0;
+  font-family: var(--ds-font-body);
+  background: var(--primitive-white-off-white);
+  color: var(--ds-text-default);
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  /* Drop shadow for tooltips / hover cards. Light: soft, low-opacity
+     black so the surface lifts gently off white. Dark: heavier opacity
+     so the drop still reads against the near-black surface. */
+  --ds-shadow-tooltip:
+    0 8px 16px -4px rgba(15, 15, 15, 0.08),
+    0 4px 8px -4px rgba(15, 15, 15, 0.04);
+}
+
+.dark {
+  --ds-shadow-tooltip:
+    0 8px 16px -4px rgba(0, 0, 0, 0.55), 0 4px 8px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* Global: every native button + role="button" presses on :active, app-wide.
+   Opt out with `data-no-tap` on the element. Disabled never presses. */
+button:not(:disabled):not([data-no-tap]),
+[role='button']:not([aria-disabled='true']):not([data-no-tap]) {
+  transition: scale var(--motion-dur-instant) var(--motion-ease-out);
+}
+button:not(:disabled):not([data-no-tap]):active,
+[role='button']:not([aria-disabled='true']):not([data-no-tap]):active {
+  scale: 0.97;
+}
+
+/* motion-tap - explicit press feedback for clickable non-button elements
+   (divs/rows/cards with onClick). Adds color/bg transitions too so hover and
+   press feel unified. Uses the same `scale:` property as the global rule. */
+.motion-tap {
+  transition:
+    scale var(--motion-dur-instant) var(--motion-ease-out),
+    color 150ms ease,
+    background-color 150ms ease,
+    border-color 150ms ease,
+    opacity 150ms ease;
+}
+.motion-tap:active:not(:disabled):not([aria-disabled='true']) {
+  scale: 0.97;
+}
+
+@keyframes widget-skeleton-sheen {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+/* The sheen sits on top of the skeleton's own `bg-muted`, so a gray-500/60%
+   band read as a second, much darker bar travelling through every placeholder -
+   the "too bright" in a page full of them. Softened to a hint above the base
+   fill; the movement still says "data is arriving" without competing with real
+   content elsewhere on the screen. */
+.widget-skeleton-sheen {
+  background-image: linear-gradient(
+    100deg,
+    transparent 22%,
+    color-mix(in srgb, var(--primitive-gray-400) 26%, transparent) 47%,
+    color-mix(in srgb, var(--primitive-gray-400) 26%, transparent) 53%,
+    transparent 78%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  animation: widget-skeleton-sheen 1.9s linear infinite;
+  animation-delay: calc(var(--skeleton-i, 0) * 0.14s);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-tap,
+  button,
+  [role='button'] {
+    transition: none;
+  }
+  button:active,
+  [role='button']:active,
+  .motion-tap:active {
+    scale: 1;
+  }
+  .widget-skeleton-sheen {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
