@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { EnvelopeSimple, LockSimple, MapTrifold } from '@phosphor-icons/react';
+import { EnvelopeSimple, LockSimple } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -63,9 +63,7 @@ export function WelcomeGate({ base, state }: { base: string; state: AccountState
         aria-labelledby="welcome-title"
         className="w-full max-w-md rounded-xl border border-ds-border-subtlest bg-ds-surface-white p-6 shadow-lg"
       >
-        <span className="mb-4 flex size-9 items-center justify-center rounded-lg border border-ds-brand-subtlest bg-ds-brand-lightest">
-          <MapTrifold size={20} weight="duotone" className="text-ds-brand-subtle" aria-hidden />
-        </span>
+        <img src="entelligence-logo.svg" alt="" className="mb-4 size-9" />
         <h1 id="welcome-title" className="ds-text-title-md-semibold text-ds-text-darker">
           {count > 0 ? `Your ${count} ${count === 1 ? 'session is' : 'sessions are'} ready` : 'Welcome to agentplay'}
         </h1>

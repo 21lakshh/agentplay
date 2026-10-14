@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { parseAsStringEnum, useQueryState, useQueryStates, parseAsString } from 'nuqs';
 import {
   FileArrowUp,
-  MapTrifold,
   Moon,
   Sun,
   X,
@@ -224,9 +223,7 @@ function AppBar({
   return (
     <header className="flex shrink-0 items-center gap-3">
       <div className="flex items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg border border-ds-brand-subtlest bg-ds-brand-lightest">
-          <MapTrifold size={16} weight="duotone" className="text-ds-brand-subtle" aria-hidden />
-        </span>
+        <img src="entelligence-logo.svg" alt="" className="size-7" />
         <span className="ds-text-body-sm-semibold text-ds-text-darker">agentplay</span>
       </div>
       {mode !== 'probing' ? (
