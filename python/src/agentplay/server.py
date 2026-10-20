@@ -369,7 +369,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _rows(self) -> list[dict[str, Any]]:
         with self.lock:
-            return [r for r in self.store.rows() if r.get("role") not in ("subagent", "helper")]
+            return [r for r in self.store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")]
 
     def _status(self) -> None:
         rows = self._rows()
