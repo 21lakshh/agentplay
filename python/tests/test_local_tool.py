@@ -538,6 +538,20 @@ def test_server_endpoints(env):
         httpd.server_close()
 
 
+def test_server_hides_zero_call_sessions(env):
+    st = Store(env["sm"])
+    st.index["oneshot"] = {"key": "k", "sessionId": "oneshot", "startedAt": "2026-09-11T00:00:00Z", "calls": 0}
+    st.index["real"] = {"key": "k2", "sessionId": "real", "startedAt": "2026-09-10T00:00:00Z", "calls": 3}
+    httpd = serve(0, store=st)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/sessions") as r:
+            assert [s["sessionId"] for s in json.loads(r.read())["sessions"]] == ["real"]
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_cli_build_json_and_export(env, capsys, monkeypatch):
     _write_claude_session(env["home"], "33333333-0000-0000-0000-000000000003", env["repo"])
     assert cli.main(["build", "--json"]) == 0
