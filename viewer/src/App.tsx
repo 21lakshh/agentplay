@@ -230,6 +230,7 @@ function AppBar({
         <Badge variant="keyline">
           {source.label}
           {count != null ? ` · ${count} ${count === 1 ? 'map' : 'maps'}` : ''}
+          {status.data?.scanning ? ' · scanning…' : ''}
         </Badge>
       ) : null}
       {onBack ? (

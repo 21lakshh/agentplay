@@ -24,6 +24,8 @@ export const sessionExplorerStatusSchema = z
     available: z.boolean().catch(false).default(false),
     mapCount: z.number().catch(0).default(0),
     latestSessionDate: z.string().nullable().catch(null).default(null),
+    /** the local server is still scanning for sessions, so more may land */
+    scanning: z.boolean().catch(false).default(false),
   })
   .passthrough();
 export type SessionExplorerStatus = z.infer<typeof sessionExplorerStatusSchema>;

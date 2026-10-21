@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import {
   keepPreviousData,
   useInfiniteQuery,
@@ -17,8 +17,12 @@ import { useSessionMapSource } from './SourceContext';
 export const sessionExplorerStatusKey = (sourceId: string) =>
   ['sessionExplorerStatus', sourceId] as const;
 
+/** How often to re-ask while the server is still scanning. */
+const SCANNING_POLL_MS = 2000;
+
 /** Whether the injected source has any maps. Fails closed: any error reads
- * as "not available" in the caller. */
+ * as "not available" in the caller. Polls while the server reports a scan
+ * in progress, and stops once it is done. */
 export function useSessionExplorerStatus() {
   const source = useSessionMapSource();
   return useQuery({
@@ -26,6 +30,7 @@ export function useSessionExplorerStatus() {
     queryFn: () => source.status(),
     staleTime: 3 * 60 * 1000,
     retry: false,
+    refetchInterval: (q) => (q.state.data?.scanning ? SCANNING_POLL_MS : false),
   });
 }
 
@@ -37,6 +42,23 @@ export function useSessionExplorerSessions(
   enabled = true
 ) {
   const source = useSessionMapSource();
+  const queryClient = useQueryClient();
+  // A background scan adds sessions after the list first loaded: refetch it
+  // whenever the count moves or the scan ends. The first answer is only
+  // recorded, so a cold load does not fetch the list twice.
+  const status = useSessionExplorerStatus();
+  const stamp = status.data ? `${status.data.mapCount}:${status.data.scanning}` : null;
+  const lastStamp = useRef<string | null>(null);
+  useEffect(() => {
+    if (stamp == null) return;
+    const prev = lastStamp.current;
+    lastStamp.current = stamp;
+    if (prev != null && prev !== stamp) {
+      void queryClient.invalidateQueries({
+        queryKey: ['sessionExplorerSessions', source.id],
+      });
+    }
+  }, [stamp, queryClient, source.id]);
   return useInfiniteQuery({
     queryKey: [
       'sessionExplorerSessions',

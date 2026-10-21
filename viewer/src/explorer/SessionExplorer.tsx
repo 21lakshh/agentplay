@@ -36,6 +36,7 @@ import { useDebounce } from '@/hooks/useDebounce';
 import {
   useSessionExplorerMap,
   useSessionExplorerSessions,
+  useSessionExplorerStatus,
 } from '@/data/hooks';
 import { WINDOW_OPTIONS, type WindowKey } from '@/core/windowOptions';
 import { ExplorerToolbar } from './ExplorerToolbar';
@@ -217,6 +218,7 @@ export function SessionExplorer({
 }: Props) {
   const data = useExplorerSessions(windowKey);
   const { list, sessions, selectedId } = data;
+  const scanning = !!useSessionExplorerStatus().data?.scanning;
   const [, setScopeParams] = useQueryStates(SCOPE_PARAMS);
   // One sidebar: the list until a session is picked (or one is linked), then
   // only that session; "All sessions" flips back without touching the URL.
@@ -262,12 +264,22 @@ export function SessionExplorer({
     return (
       <div className="flex flex-col gap-3">
         {windowSelect ? <div className="w-48">{windowSelect}</div> : null}
-        <EmptyState
-          icon={<MapTrifold size={24} weight="duotone" />}
-          title="No session maps yet"
-          description="Session maps appear here once a coding-agent session has been indexed. Try a longer window if you expected one."
-          action={emptyAction}
-        />
+        {scanning ? (
+          // The first scan is still running: "none yet" would be a false
+          // answer. The list fills in by itself as maps land.
+          <EmptyState
+            icon={<MapTrifold size={24} weight="duotone" />}
+            title="Scanning your sessions…"
+            description="agentplay is building maps from your coding-agent sessions. They appear here as they are ready."
+          />
+        ) : (
+          <EmptyState
+            icon={<MapTrifold size={24} weight="duotone" />}
+            title="No session maps yet"
+            description="Session maps appear here once a coding-agent session has been indexed. Try a longer window if you expected one."
+            action={emptyAction}
+          />
+        )}
       </div>
     );
   }

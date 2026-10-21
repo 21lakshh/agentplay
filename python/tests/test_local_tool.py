@@ -478,6 +478,49 @@ def test_server_picks_up_sessions_built_while_it_runs(env):
         httpd.server_close()
 
 
+def test_status_reports_a_background_scan(env):
+    """The viewer tells "no sessions yet" from "no sessions" by this flag."""
+    scanning = threading.Event()
+    scanning.set()
+    httpd = serve(0, store=Store(env["sm"]), scanning=scanning)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+
+    def status() -> dict[str, Any]:
+        with urllib.request.urlopen(f"{base}/api/status") as r:
+            return json.loads(r.read())
+
+    try:
+        assert status()["scanning"] is True and status()["mapCount"] == 0
+        scanning.clear()
+        assert status()["scanning"] is False
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_long_build_saves_the_index_as_it_goes(env, monkeypatch):
+    """A first scan can take minutes; the viewer should not sit on an empty list
+    until it ends, so the index is written mid-run too."""
+    for n in range(3):
+        _write_claude_session(env["home"], f"9999999{n}-0000-0000-0000-00000000000{n}", env["repo"])
+    monkeypatch.setattr(pipeline, "SAVE_EVERY_S", 0.0)
+    saves = 0
+    real = Store.save_index
+
+    def counting(self: Store) -> None:
+        nonlocal saves
+        saves += 1
+        real(self)
+
+    monkeypatch.setattr(Store, "save_index", counting)
+    rep = pipeline.build_all(agents={"claude-code"}, store=Store(env["sm"]))
+    assert rep.built == 3
+    # One after each of the first two maps, plus the final save.
+    assert saves == 3
+    assert len(Store(env["sm"]).index) == 3
+
+
 def test_reload_if_changed_is_opt_in_because_it_discards_pending_writes(env):
     """Why the reload is an explicit call and not a check inside `index`.
 
@@ -518,7 +561,8 @@ def test_server_endpoints(env):
 
     try:
         status = get("/api/status")
-        assert status == {"success": True, "available": True, "mapCount": 1, "latestSessionDate": "2026-09-10"}
+        assert status == {"success": True, "available": True, "mapCount": 1, "latestSessionDate": "2026-09-10",
+                          "scanning": False}
         page = get("/api/sessions?pageSize=10")
         assert page["hasMore"] is False and len(page["sessions"]) == 1
         row = page["sessions"][0]

@@ -180,20 +180,23 @@ def cmd_build(args: argparse.Namespace, *, quiet: bool = False) -> pipeline.Buil
 
 
 # --------------------------------------------------------------------------- view
-def _background_scan(args: argparse.Namespace) -> None:
+def _background_scan(args: argparse.Namespace, scanning: threading.Event) -> None:
     """Scan for new sessions beside a running viewer.
 
     Failures are reported and dropped: a bad transcript must not take the viewer
-    down with it, and everything already built stays servable.
+    down with it, and everything already built stays servable. ``scanning`` is
+    cleared either way, which is how the open viewer learns the scan is over.
     """
     try:
         rep = cmd_build(args, quiet=True)
     except Exception as exc:  # noqa: BLE001 - the viewer outlives a failed scan
         print(_dim(f"Scan failed: {type(exc).__name__}: {exc}"), file=sys.stderr, flush=True)
         return
+    finally:
+        scanning.clear()
     built = f"{rep.built} new" if rep.built else "nothing new"
     skipped = f", {rep.skipped} skipped{_skip_breakdown(rep)}" if rep.skipped else ""
-    print(_dim(f"Scan done: {built} of {rep.found} sessions{skipped} in {rep.seconds}s. Reload to see them."), flush=True)
+    print(_dim(f"Scan done: {built} of {rep.found} sessions{skipped} in {rep.seconds}s."), flush=True)
 
 
 def cmd_view(args: argparse.Namespace) -> int:
@@ -203,7 +206,12 @@ def cmd_view(args: argparse.Namespace) -> int:
     # (decoding database-backed agents such as Cursor dominates it), and
     # everything already built is servable immediately; the index is re-read
     # as new maps land.
-    httpd = serve(args.port)
+    scanning = threading.Event()
+    if not args.no_build:
+        # Set before the server answers anything, so the viewer's first status
+        # call already says a scan is under way.
+        scanning.set()
+    httpd = serve(args.port, scanning=scanning)
     port = httpd.server_address[1]
     if args.port and port != args.port:
         print(f"Port {args.port} is busy; using {port} instead.", file=sys.stderr, flush=True)
@@ -216,7 +224,7 @@ def cmd_view(args: argparse.Namespace) -> int:
     print(f"Viewer → {_b(url)}   {_dim('(Ctrl+C to stop)')}", flush=True)
     if not args.no_build:
         print(_dim("Scanning for new sessions in the background…"), flush=True)
-        threading.Thread(target=_background_scan, args=(args,), daemon=True).start()
+        threading.Thread(target=_background_scan, args=(args, scanning), daemon=True).start()
     if not args.no_open:
         threading.Timer(0.3, lambda: webbrowser.open(url)).start()
     try:

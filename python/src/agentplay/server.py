@@ -3,7 +3,7 @@
 Binds to 127.0.0.1 only. Serves the static viewer from the package's
 ``viewer/`` directory and these endpoints over the local store:
 
-``GET /api/status``            ``{available, mapCount, latestSessionDate}``
+``GET /api/status``            ``{available, mapCount, latestSessionDate, scanning}``
 ``GET /api/sessions``          paged session rows (``from``, ``to``, ``search``, ``pageSize``, ``cursor``)
 ``GET /api/map``               one entry per ``session_id`` param, each with a ``url``
 ``GET /api/map-doc?id=...``    the map document itself
@@ -189,6 +189,9 @@ class _Handler(BaseHTTPRequestHandler):
     timeout = 15
     store: Store
     static: Path | None
+    # Set while `agentplay view` is scanning in the background, so the viewer
+    # can tell "no sessions yet" from "no sessions".
+    scanning: threading.Event | None = None
     lock = threading.Lock()
 
     def log_message(self, fmt: str, *args: Any) -> None:  # quiet by default
@@ -374,7 +377,9 @@ class _Handler(BaseHTTPRequestHandler):
     def _status(self) -> None:
         rows = self._rows()
         latest = max((r.get("sessionDate") or "" for r in rows), default="") or None
-        self._json({"success": True, "available": bool(rows), "mapCount": len(rows), "latestSessionDate": latest})
+        scanning = bool(self.scanning and self.scanning.is_set())
+        self._json({"success": True, "available": bool(rows), "mapCount": len(rows), "latestSessionDate": latest,
+                    "scanning": scanning})
 
     def _sessions(self, q: dict[str, list[str]]) -> None:
         rows = self._rows()
@@ -501,9 +506,18 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"success": True, "message": message, "command": command})
 
 
-def serve(port: int = 7317, *, store: Store | None = None, host: str = "127.0.0.1") -> ThreadingHTTPServer:
-    """Create (but do not start) the local server. Call ``serve_forever()`` on the result."""
-    handler = type("Handler", (_Handler,), {"store": store or Store(), "static": viewer_root()})
+def serve(
+    port: int = 7317,
+    *,
+    store: Store | None = None,
+    host: str = "127.0.0.1",
+    scanning: threading.Event | None = None,
+) -> ThreadingHTTPServer:
+    """Create (but do not start) the local server. Call ``serve_forever()`` on the result.
+
+    ``scanning``: set while a background scan runs; ``/api/status`` reports it.
+    """
+    handler = type("Handler", (_Handler,), {"store": store or Store(), "static": viewer_root(), "scanning": scanning})
     try:
         return _Server((host, port), handler)
     except OSError:

@@ -16,6 +16,9 @@ from .store import Store
 
 logger = logging.getLogger("agentplay.pipeline")
 
+# How often a long build writes the index mid-run (seconds).
+SAVE_EVERY_S = 2.0
+
 
 @dataclass
 class BuildReport:
@@ -177,7 +180,14 @@ def build_all(
             for reason, n in walk["skipped"].items():
                 if reason not in ("different_agent", "subagent_component"):
                     report.skip(reason, n)
+    # Saved as it goes, not only at the end: `view` serves while this runs, and a
+    # first scan can take minutes, so the open viewer fills in as maps land.
+    last_save = time.monotonic()
+    pending = False
     for i, c in enumerate(cands):
+        if pending and time.monotonic() - last_save >= SAVE_EVERY_S:
+            store.save_index()
+            last_save, pending = time.monotonic(), False
         if progress:
             progress(i, len(cands), c.session_id)
         if not rebuild and store.is_fresh(c.session_id, c.mtime, built_with=__version__, path_mode=effective_mode):
@@ -202,6 +212,7 @@ def build_all(
         title = discover.local_title(c, source) if titles else None
         task_titles = discover.local_task_titles(c, source) if titles else None
         store.put(doc, _row(doc, c, title, task_titles))
+        pending = True
         report.built += 1
         report.by_agent[c.agent] += 1
     store.save_index()
