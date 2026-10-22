@@ -40,7 +40,7 @@ export function demoSource(root = 'demo/'): SessionMapSource {
     async status() {
       const rows = await load();
       const latest = rows.map((r) => r.sessionDate ?? '').sort().pop() || null;
-      return { success: true, available: rows.length > 0, mapCount: rows.length, latestSessionDate: latest };
+      return { success: true, available: rows.length > 0, mapCount: rows.length, latestSessionDate: latest, scanning: false };
     },
     async sessions(params) {
       return listRows(await load(), params);
