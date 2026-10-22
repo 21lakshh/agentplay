@@ -74,8 +74,6 @@ export function App() {
   // `demo` doubles as the sample switch: present means show the bundled
   // sessions, absent means the user's own. `sample` is the reveal state of
   // the locked block, kept in the URL so it survives the source swap.
-  // `sq` (the sessions search) and `win` (the time window) are here because
-  // they decide which sessions the explorer can select at all.
   const [sampleQuery, setSampleQuery] = useQueryStates({
     demo: parseAsString,
     sample: parseAsString,
@@ -171,7 +169,14 @@ export function App() {
           mode={mode}
           source={source}
           picker={picker}
-          onBack={openedFiles ? () => setShowFiles(false) : undefined}
+          onBack={
+            openedFiles
+              ? () => {
+                  setShowFiles(false);
+                  void setSampleQuery({ session: null });
+                }
+              : undefined
+          }
           baseLabel={baseSource.label}
           account={mode === 'server' ? <AccountChip base={base} state={account.data} /> : null}
         />

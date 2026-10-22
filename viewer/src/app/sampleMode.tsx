@@ -4,9 +4,6 @@ import { createContext, useContext, type ReactNode } from 'react';
  * The bundled demo session that opened a PR (`scripts/make-demo.mjs`, first
  * entry). It is the only demo session with a PR in it, so it is the one worth
  * swapping to when someone asks what the review loop looks like.
- *
- * A wrong id here is not fatal: the explorer falls back to the first session
- * in the list, which is this one.
  */
 export const SAMPLE_SESSION_ID =
   'local:claude-code:5f2c9a1e-7b44-4d0e-9c1a-demo00000001';
@@ -31,12 +28,6 @@ export interface SampleQuery {
 }
 
 /**
- * Showing the sample swaps the view onto `SAMPLE_SESSION_ID` *and* clears
- * every list filter, because the explorer falls back to the first row of the
- * **filtered** list when the session it is asked for is not in it: a search
- * or a time window that excludes the sample would otherwise leave the reader
- * on some other session with the preview still blurred.
- *
  * It is a pushed history entry, so the browser's own Back button restores the
  * filters the reader had -- which is why they are cleared through the URL
  * rather than as local state.
