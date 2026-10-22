@@ -98,7 +98,6 @@ describe('replayKeyAction', () => {
       target,
       ...mods,
     });
-  // What Space, ArrowRight and E do with focus on the `data-t` element.
   const keysOn = (target: Element) =>
     [' ', 'ArrowRight', 'e'].map((k) => key(k, {}, target)?.type ?? null);
   const focused = (html: string) => {
@@ -138,15 +137,18 @@ describe('replayKeyAction', () => {
     for (const target of [
       focused('<div role="region" tabindex="-1" data-t><p>map</p></div>'),
       focused('<svg role="img"><circle tabindex="0" data-t></circle></svg>'),
+      focused('<div contenteditable="false" data-t>14:05</div>'),
       document.body,
     ])
       expect(keysOn(target)).toEqual(['toggle', 'step', 'jump']);
   });
 
-  it('Space presses a focused button or link instead of playing', () => {
+  it('Space presses a focused button, link or summary instead of playing', () => {
     for (const html of [
       '<button data-t>4×</button>',
       '<a href="#" data-t>PR #12</a>',
+      '<details><summary data-t>Tool categories</summary></details>',
+      '<svg><text role="button" tabindex="0" data-t>index.ts</text></svg>',
     ])
       expect(keysOn(focused(html)), html).toEqual([null, 'step', 'jump']);
   });
@@ -165,6 +167,7 @@ describe('replayKeyAction', () => {
       '<textarea data-t></textarea>',
       '<select data-t></select>',
       '<div contenteditable data-t></div>',
+      '<div contenteditable="plaintext-only" data-t></div>',
       '<input role="combobox" data-t>',
       '<div role="listbox"><button role="option" data-t>14:05</button></div>',
       '<div role="menu"><div role="menuitem" tabindex="-1" data-t>Next</div></div>',

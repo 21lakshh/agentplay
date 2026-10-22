@@ -99,16 +99,13 @@ const JUMP_KEYS: Record<string, JumpKey> = {
   r: 'retry',
 };
 
-// Focused controls that use a replay key themselves, by what the key would
-// do: text fields, lists and popups take every key, tabs and radios also take
-// the arrows, and buttons and links also take Space.
 const TAKES_EVERY_KEY =
-  'input, textarea, select, [contenteditable], [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="dialog"]';
+  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="listbox"], [role="option"], [role="menu"], [role="dialog"]';
 const TAKES_ARROWS = `${TAKES_EVERY_KEY}, [role="tab"], [role="radio"]`;
 const KEPT_BY: Record<ReplayKeyAction['type'], string> = {
   jump: TAKES_EVERY_KEY,
   step: TAKES_ARROWS,
-  toggle: `${TAKES_ARROWS}, button, a[href]`,
+  toggle: `${TAKES_ARROWS}, button, summary, a[href], [role="button"]`,
 };
 
 /**
