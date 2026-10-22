@@ -6,7 +6,12 @@ import {
   type KeyboardEvent,
 } from 'react';
 import type { SessionMap, SessionMapEvent } from '@/core/schema';
-import { initialPlayback, playbackReducer, replayKeyAction } from '@/core/playback';
+import {
+  initialPlayback,
+  playbackClock,
+  playbackReducer,
+  replayKeyAction,
+} from '@/core/playback';
 import { MAP_RADIUS } from '@/core/mapGeometry';
 import {
   buildTree,
@@ -59,20 +64,17 @@ export function usePlaybackWindow(map: SessionMap) {
     })
   );
 
-  // rAF loop while playing; the reducer turns elapsed ms into events.
   useEffect(() => {
     if (!pb.playing) return;
+    const tick = playbackClock(pb.speedIdx, dispatch);
     let raf = 0;
-    let last = 0;
     const frame = (t: number) => {
-      const dt = last ? t - last : 0;
-      last = t;
-      if (dt) dispatch({ type: 'tick', dtMs: dt });
+      tick(t);
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [pb.playing]);
+  }, [pb.playing, pb.speedIdx]);
 
   const seek = useCallback(
     (index: number) => dispatch({ type: 'seek', index }),
