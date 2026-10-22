@@ -19,6 +19,8 @@ export const sessionExplorerStatusKey = (sourceId: string) =>
 
 /** How often to re-ask while the server is still scanning. */
 const SCANNING_POLL_MS = 2000;
+/** The slower re-ask after a failed status call, while it still says scanning. */
+const SCANNING_ERROR_POLL_MS = 30_000;
 
 /** Whether the injected source has any maps. Fails closed: any error reads
  * as "not available" in the caller. Polls while the server reports a scan
@@ -30,7 +32,13 @@ export function useSessionExplorerStatus() {
     queryFn: () => source.status(),
     staleTime: 3 * 60 * 1000,
     retry: false,
-    refetchInterval: (q) => (q.state.data?.scanning ? SCANNING_POLL_MS : false),
+    // An error keeps the last `scanning: true` in `data`, so a stopped server
+    // would be polled every 2s forever. Back off instead of stopping, so a
+    // server restarted on the same port is picked up again.
+    refetchInterval: (q) => {
+      if (!q.state.data?.scanning) return false;
+      return q.state.status === 'error' ? SCANNING_ERROR_POLL_MS : SCANNING_POLL_MS;
+    },
   });
 }
 
