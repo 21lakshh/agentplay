@@ -264,7 +264,7 @@ function SessionRow({
         aria-current={selected ? 'true' : undefined}
         onClick={onSelect}
         onDoubleClick={onOpen}
-        className="flex cursor-pointer flex-col gap-1 rounded-lg p-2 text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ds-brand-subtler"
+        className="flex cursor-pointer flex-col gap-1 rounded-lg p-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ds-brand-subtle focus-visible:ring-offset-1 focus-visible:ring-offset-ds-surface-white"
       >
         <span className="line-clamp-2 ds-text-body-xs-medium text-ds-text-darker">
           {sessionTitle(s)}

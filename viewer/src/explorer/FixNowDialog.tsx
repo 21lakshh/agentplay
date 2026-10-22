@@ -74,7 +74,7 @@ export function FixNowDialog({ c }: { c: SampleComment }) {
                 aria-checked={delivery === d.id}
                 onClick={() => setDelivery(d.id)}
                 className={cn(
-                  'flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ds-brand-subtler',
+                  'flex cursor-pointer flex-col gap-0.5 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ds-brand-subtle focus-visible:ring-offset-1 focus-visible:ring-offset-ds-surface-white',
                   delivery === d.id
                     ? 'border-ds-brand-subtler bg-ds-brand-lightest'
                     : 'border-ds-border-subtlest hover:bg-ds-gray-subtlest'
