@@ -168,6 +168,27 @@ def test_unreadable_workflow_folder_fails_only_its_own_session(env):
     assert (rep.found, rep.built, rep.failed) == (2, 1, 1)
 
 
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0, reason="needs POSIX permissions")
+def test_hook_detail_keeps_readable_subagents_beside_an_unreadable_folder(tmp_path):
+    from agentplay.hook_detail import _transcripts
+
+    f = tmp_path / "s.jsonl"
+    f.write_text("")
+    subs = tmp_path / "s" / "subagents"
+    (subs / "workflows" / "ok").mkdir(parents=True)
+    direct = subs / "agent-a.jsonl"
+    nested = subs / "workflows" / "ok" / "agent-b.jsonl"
+    direct.write_text("")
+    nested.write_text("")
+    bad = subs / "workflows" / "locked"
+    bad.mkdir()
+    bad.chmod(0)
+    try:
+        assert _transcripts(str(f)) == [str(f), str(direct), str(nested)]
+    finally:
+        bad.chmod(0o700)
+
+
 @pytest.mark.parametrize(
     ("raw", "want"),
     [

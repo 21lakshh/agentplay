@@ -1165,9 +1165,12 @@ def _has_cursor_store_header(head: bytes) -> bool:
     return False
 
 
-def claude_code_subagent_files(transcript: Path) -> list[Path]:
+def claude_code_subagent_files(transcript: Path, *, strict: bool = True) -> list[Path]:
+    """Subagent transcripts under ``<session>/subagents/**``. ``strict`` raises on an
+    unreadable folder; otherwise that folder is skipped and its readable siblings kept."""
+
     def _raise_unless_missing(err: OSError) -> None:
-        if not isinstance(err, FileNotFoundError):
+        if strict and not isinstance(err, FileNotFoundError):
             raise err
 
     return sorted(
