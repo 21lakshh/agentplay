@@ -473,6 +473,30 @@ export function drawPlayhead(g: DrawEnv, p: number) {
   ctx.stroke();
 }
 
+/**
+ * "HH:MM" labels for axis ticks at `ts` ms into the session. A tick that lands
+ * on a later UTC day than the tick before it also gets the date
+ * ("Oct 22 02:23"), so a session that runs past midnight doesn't read as going
+ * back in time.
+ */
+export function axisTickLabels(startedAt: string, ts: number[]): string[] {
+  const base = Date.parse(startedAt);
+  let prevDay = Math.floor(base / 86_400_000);
+  return ts.map((t) => {
+    const clock = clockAt(startedAt, t).slice(0, 5);
+    if (Number.isNaN(base)) return clock;
+    const day = Math.floor((base + t) / 86_400_000);
+    if (day === prevDay) return clock;
+    prevDay = day;
+    const date = new Date(base + t).toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      timeZone: 'UTC',
+    });
+    return `${date} ${clock}`;
+  });
+}
+
 /** Five clock ticks along the bottom. */
 export function drawAxis(
   g: DrawEnv,
