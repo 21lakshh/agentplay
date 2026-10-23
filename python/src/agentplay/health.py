@@ -62,9 +62,14 @@ def _scope(verb: str) -> frozenset[str]:
     Two checks only stand in for each other when their scopes match, so a
     failing unit suite is never "replaced" by a passing e2e one.
     """
-    words = [w for w in re.split(r"[^a-z0-9]+", verb.lower()) if w][1:]
-    # Whole job words only (and their plurals): `unittest` or `smoke-tests` keep their target.
-    job_words = {p for _, ws in _PURPOSES for w in ws for p in re.split(r"[^a-z0-9]+", w) if p}
+    low = verb.lower()
+    # A compound job word (`type-check`) is one word: joined before splitting, so its
+    # pieces (`check`) never become generic and strip a real target.
+    for w in (w for _, ws in _PURPOSES for w in ws if not w.isalnum()):
+        low = low.replace(w, re.sub(r"[^a-z0-9]+", "", w))
+    words = [w for w in re.split(r"[^a-z0-9]+", low) if w][1:]
+    # Whole job words only (and their plurals): `unittest` or `e2etests` keep their target.
+    job_words = {re.sub(r"[^a-z0-9]+", "", w) for _, ws in _PURPOSES for w in ws}
     generic = job_words | {"run", "exec", "x"}
     return frozenset(w for w in words if w not in generic and not (w.endswith("s") and w[:-1] in job_words))
 

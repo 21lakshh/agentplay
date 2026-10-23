@@ -457,6 +457,8 @@ def test_a_replacement_check_must_cover_the_same_target():
     assert health._scope("pnpm test") == health._scope("pnpm vitest")  # the case the rule exists for
     assert health._scope("pnpm unittest") != health._scope("pnpm vitest")  # a target spelled with a job word
     assert health._scope("pnpm run tests") == health._scope("pnpm test")
+    assert health._scope("pnpm test:check") != health._scope("pnpm test")  # `check` is a target, not a job word
+    assert health._scope("pnpm run type-check") == health._scope("pnpm tsc")
 
 
 def test_one_multi_file_reread_charges_one_request():
