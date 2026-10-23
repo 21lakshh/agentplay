@@ -341,7 +341,8 @@ def _pick_fix(st: Store, items: list[dict], target: str) -> dict | None:
     by_id = next((f for f in items if f["id"] == target), None)
     if by_id is None and len(target) == 12:
         by_id = next((f for f in _health_fixes(st, days=36500) if f["id"] == target), None)
-    if by_id is not None or not target.isdigit():
+    # Bounded before int(): a huge digit string would raise rather than be rejected.
+    if by_id is not None or not target.isdigit() or len(target.lstrip("0")) > 6:
         return by_id
     n = int(target)
     return items[n - 1] if 1 <= n <= len(items) else None

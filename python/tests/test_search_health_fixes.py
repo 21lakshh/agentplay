@@ -400,8 +400,12 @@ def test_an_all_digit_fix_id_is_matched_before_a_list_number(monkeypatch):
     assert cli._pick_fix(None, items, "123456789012")["id"] == "123456789012"
     assert cli._pick_fix(None, items, "1")["id"] == "aaaaaaaaaaaa"
     assert cli._pick_fix(None, items, "0") is None
+    # A historical id wins over the list position the same digits would name.
+    monkeypatch.setattr(cli, "_health_fixes", lambda *_a, **_k: [{"id": "000000000001"}])
+    assert cli._pick_fix(None, items, "000000000001") == {"id": "000000000001"}
     monkeypatch.setattr(cli, "_health_fixes", lambda *_a, **_k: [])
     assert cli._pick_fix(None, items, "000000000002")["id"] == "123456789012"  # zero-padded number
+    assert cli._pick_fix(None, items, "9" * 5000) is None  # rejected, not a ValueError
 
 
 def test_bad_cron_time_leaves_the_hook_alone(monkeypatch, capsys):
