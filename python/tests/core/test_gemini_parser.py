@@ -584,6 +584,29 @@ def test_oversized_transcript_is_skipped_as_too_large(tmp_path, monkeypatch):
     assert source.discovery_stats()["gemini-cli"]["skipped"]["too_large"] == 1
 
 
+def test_complete_final_line_at_the_byte_cap_is_a_prompt(tmp_path, monkeypatch):
+    # The only real prompt is the last line, it has no trailing newline, and
+    # the file length is exactly the cap. That line is a whole record.
+    chats = _chats(tmp_path)
+    header = json.dumps(
+        {
+            "sessionId": "at-cap",
+            "projectHash": "h",
+            "startTime": "2026-10-23T07:00:00Z",
+            "kind": "main",
+        }
+    ).encode() + b"\n"
+    prompt = json.dumps(_user_record("u1", [{"text": "PROMPT-PLACEHOLDER-1"}])).encode()
+    data = header + prompt
+    assert not data.endswith(b"\n")
+    monkeypatch.setattr(local_source, "MAX_SOURCE_BYTES", len(data))
+    (chats / "session-at-cap.jsonl").write_bytes(data)
+
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[chats.parents[2]])
+    index = source._build_index()
+    assert "local:gemini-cli:at-cap" in index
+
+
 def test_local_source_indexes_gemini_sessions(tmp_path):
     source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[_gemini_home(tmp_path)])
     index = source._build_index()

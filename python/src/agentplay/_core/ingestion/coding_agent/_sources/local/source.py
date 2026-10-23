@@ -1150,12 +1150,15 @@ def _gemini_has_messages(path: Path) -> bool:
             if not line:
                 break
             remaining -= len(line)
-            # `readline(n)` cuts a line at n bytes. A partial record is not JSON.
-            if remaining == 0 and not line.endswith(b"\n"):
-                break
+            # `readline(n)` also returns this when the file ends on a full
+            # record with no trailing newline, exactly at the cap. Parse it;
+            # only a cut that is not JSON is truncated.
+            at_cap = remaining == 0 and not line.endswith(b"\n")
             try:
                 obj = json.loads(line)
             except (ValueError, RecursionError):
+                if at_cap:
+                    break
                 continue
             if not isinstance(obj, dict):
                 continue
