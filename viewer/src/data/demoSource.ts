@@ -31,6 +31,8 @@ export function demoSource(root = 'demo/'): SessionMapSource {
   let raw: Promise<{ sessions?: unknown[] }> | null = null;
   let index: Promise<DemoRow[]> | null = null;
   const loadRaw = () =>
+    // Same-origin only (sameOriginUrl), and this runs in the browser: no server-side request.
+    // nosemgrep: app.repo_health.semgrep_rules.entelligence.javascript.ssrf.fetch-dynamic-url
     (raw ??= fetch(sameOriginUrl('index.json', base))
       .then((r) => {
         if (!r.ok) throw new SessionExplorerError('demo index missing', 'not_found');
@@ -87,6 +89,8 @@ export function demoSource(root = 'demo/'): SessionMapSource {
       return insightsStatsSchema.parse({ sessions: rows });
     },
     async fetchMap(meta) {
+      // Same-origin only (sameOriginUrl); index entries cannot point the page elsewhere.
+      // nosemgrep: app.repo_health.semgrep_rules.entelligence.javascript.ssrf.fetch-dynamic-url
       const r = await fetch(sameOriginUrl(meta.url, base));
       if (!r.ok) throw new SessionExplorerError(`demo map ${r.status}`, 'not_found');
       return parseMapBytes(new Uint8Array(await r.arrayBuffer()));
