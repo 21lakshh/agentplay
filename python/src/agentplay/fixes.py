@@ -283,26 +283,36 @@ def _settings(text: str | None, rel: str) -> dict[str, Any]:
     return value
 
 
+def _one_line(texts: list[str]) -> None:
+    # Fix text carries command verbs from maps, which an imported map controls: a line break
+    # or other control character would smuggle in an instruction, rule or command undo cannot remove.
+    if any(ch in "\x85  " or (ord(ch) < 32 and ch != "\t") or ord(ch) == 127 for t in texts for ch in t):
+        raise FixError("bad_fix", "This fix text spans more than one line; agentplay will not write it.")
+
+
 def _apply_text(action: dict[str, Any], text: str | None, fix_id: str, rel: str) -> str:
     kind = action.get("kind")
     if kind == "claude_md":
         lines = [str(x) for x in action.get("lines") or [] if str(x).strip()]
         if not lines:
             raise FixError("empty_fix", "This fix has nothing to write.")
-        # Fix text carries command verbs from maps, which an imported map controls: a line
-        # break would write an instruction outside the marked line that undo cannot remove.
-        if any(ch in line for line in lines for ch in "\r\n\x0b\x0c\x85\u2028\u2029"):
-            raise FixError("bad_fix", "This fix text spans more than one line; agentplay will not write it.")
+        # A marker inside a line would break the managed block for every later apply and undo.
+        if any("<!-- agentplay" in line for line in lines):
+            raise FixError("bad_fix", "This fix text contains an agentplay marker; agentplay will not write it.")
+        _one_line(lines)
         return add_lines(text, fix_id, lines, rel)
     data = _settings(text, rel)
     if kind == "settings_allow":
         allow = _field(_field(data, "permissions", dict, rel, "permissions"), "allow", list, rel, "permissions.allow")
         entry = str(action.get("entry") or "")
+        _one_line([entry])
         if entry and entry not in allow:
             allow.append(entry)
     elif kind == "stop_hook":
         stop = hook_groups(data, rel, "Stop")
         cmd = str(action.get("command") or "")
+        # A hook command runs in a shell: a line break would run a second command.
+        _one_line([cmd])
         if not any(h.get("command") == cmd for g in stop for h in g.get("hooks", [])):
             stop.append({"hooks": [{"type": "command", "command": cmd}]})
     else:
