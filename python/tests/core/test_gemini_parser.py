@@ -1,0 +1,339 @@
+"""Gemini CLI parser, detection and discovery.
+
+The fixtures under ``fixtures/gemini/`` are three real Gemini CLI 0.65 sessions
+with every prompt, reply, thought, path, file content, description, tool
+output and command argument replaced by a placeholder. What survives is the
+structure: record shapes, ids (renumbered), timestamps, token counts, model,
+tool names and statuses, and the shell result labels with their exit code.
+
+* ``read_explain``: reads two files and explains the project.
+* ``edit_and_run``: reads a file, rewrites it, runs it.
+* ``failed_shell``: runs a missing file (exit code 1), then recovers.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+
+from agentplay import builder, discover
+from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
+    AgentType,
+    detect_agent,
+    parse_gemini,
+)
+from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+FIXTURES = Path(__file__).parent / "fixtures" / "gemini"
+FIXTURE_ROOT = "/Users/dev/project"
+# The fixtures carry a zeroed `projectHash`; tests that need the indexer to
+# accept `.project_root` stamp in the hash of FIXTURE_ROOT.
+ZERO_HASH = "0" * 64
+
+
+def _fixture(name: str) -> bytes:
+    return (FIXTURES / f"{name}.jsonl").read_bytes()
+
+
+def _parse(name: str):
+    _, spans = parse_gemini(_fixture(name), f"local:gemini-cli:{name}")
+    return spans
+
+
+def _turns(spans):
+    return [s for s in spans if s.name.startswith("Turn ")]
+
+
+def _tools(spans):
+    return [s for s in spans if ":tool:" in s.span_id]
+
+
+def _records(name: str) -> list[dict]:
+    return [json.loads(line) for line in _fixture(name).splitlines() if line.strip()]
+
+
+def _unique_gemini_tokens(name: str) -> list[dict]:
+    """The token record of each distinct `gemini` message id (last copy wins)."""
+    latest: dict[str, dict] = {}
+    for rec in _records(name):
+        if rec.get("type") == "gemini":
+            latest[rec["id"]] = rec
+    return [m["tokens"] for m in latest.values() if "tokens" in m]
+
+
+@pytest.mark.parametrize("name", ["read_explain", "edit_and_run", "failed_shell"])
+def test_fixture_is_detected_as_gemini_cli(name):
+    assert detect_agent(_fixture(name)) == AgentType.GEMINI_CLI
+
+
+def test_claude_code_records_are_not_claimed_as_gemini():
+    line = {"type": "user", "sessionId": "s1", "message": {"role": "user", "content": "hi"}}
+    assert detect_agent(json.dumps(line).encode()) == AgentType.CLAUDE_CODE
+
+
+def test_message_without_header_is_still_detected():
+    line = {"id": "g1", "timestamp": "2026-10-23T07:00:00Z", "type": "gemini", "content": ""}
+    assert detect_agent(json.dumps(line).encode()) == AgentType.GEMINI_CLI
+
+
+@pytest.mark.parametrize(
+    ("name", "tools"),
+    [
+        ("read_explain", ["update_topic", "Read", "Read"]),
+        ("edit_and_run", ["update_topic", "Read", "Write", "Bash"]),
+        ("failed_shell", ["Bash", "Bash"]),
+    ],
+)
+def test_turn_and_tool_counts(name, tools):
+    spans = _parse(name)
+    assert spans[0].name == "Session" and spans[0].parent_id is None
+    turns = _turns(spans)
+    # One prompt per session; the CLI's `<session_context>` message is not a turn.
+    assert len(turns) == 1
+    assert turns[0].attributes["input.value"] == "PROMPT-PLACEHOLDER-1"
+    assert [s.name for s in _tools(spans)] == tools
+    assert all(s.parent_id == turns[0].span_id for s in _tools(spans))
+    assert all(s.attributes["tool.name"] == s.name for s in _tools(spans))
+
+
+def test_failed_shell_call_is_an_error_and_the_retry_is_not():
+    failed, retry = _tools(_parse("failed_shell"))
+    # The CLI records `status: success` for both; the exit code is the signal.
+    assert failed.status_code == "ERROR"
+    assert retry.status_code == "OK"
+    assert failed.attributes["code.edit_evidence"]["status"] == "not_successful"
+
+
+def test_successful_sessions_have_no_errors():
+    for name in ("read_explain", "edit_and_run"):
+        assert {s.status_code for s in _tools(_parse(name))} == {"OK"}
+
+
+def test_write_records_edit_evidence():
+    write = next(s for s in _tools(_parse("edit_and_run")) if s.name == "Write")
+    assert json.loads(write.attributes["input.value"])["file_path"] == f"{FIXTURE_ROOT}/file_1.js"
+    assert write.attributes["code.edit_evidence"]["status"] != "not_successful"
+
+
+@pytest.mark.parametrize("name", ["read_explain", "edit_and_run", "failed_shell"])
+def test_tokens_are_counted_once_per_request(name):
+    turn = _turns(_parse(name))[0].attributes
+    tokens = _unique_gemini_tokens(name)
+    prompt = sum(t["input"] + t["tool"] for t in tokens)
+    cached = sum(t["cached"] for t in tokens)
+    completion = sum(t["output"] + t["thoughts"] for t in tokens)
+    assert turn["llm.token_count.prompt"] == prompt
+    assert turn["llm.token_count.cache_read"] == cached
+    assert turn["llm.token_count.input_fresh"] == prompt - cached
+    assert turn["llm.token_count.completion"] == completion
+    assert turn["llm.token_count.reasoning"] == sum(t["thoughts"] for t in tokens)
+    assert len(turn["llm.cost_events"]) == len(tokens)
+
+
+def test_model_and_session_id():
+    root = _parse("failed_shell")[0].attributes
+    assert root["llm.model_name"] == "gemini-3.6-flash"
+    assert root["harness.agent_session_id"] == "00000000-0000-4000-8000-000000000001"
+    assert _parse("read_explain")[0].attributes["llm.model_name"] == "gemini-3-flash-preview"
+
+
+def _session(*records: dict) -> bytes:
+    header = {"sessionId": "s1", "projectHash": "h", "startTime": "2026-10-23T07:00:00Z", "kind": "main"}
+    return b"".join(json.dumps(r).encode() + b"\n" for r in (header, *records))
+
+
+def _call(name: str, status: str, response: dict | None = None, **args) -> dict:
+    return {
+        "id": f"c-{name}-{status}",
+        "name": name,
+        "args": args,
+        "result": [{"functionResponse": {"id": "x", "name": name, "response": response or {"output": "ok"}}}],
+        "status": status,
+        "timestamp": "2026-10-23T07:00:02Z",
+    }
+
+
+def test_status_mapping_for_other_tools():
+    prompt = {"id": "u1", "timestamp": "2026-10-23T07:00:00Z", "type": "user", "content": [{"text": "go"}]}
+    reply = {
+        "id": "g1",
+        "timestamp": "2026-10-23T07:00:01Z",
+        "type": "gemini",
+        "content": "",
+        "toolCalls": [
+            _call("replace", "success", file_path="/p/a.py", old_string="a\n", new_string="b\n"),
+            _call("read_file", "error", file_path="/p/missing.py"),
+            _call("write_file", "cancelled", file_path="/p/b.py", content="x"),
+            _call("grep_search", "success", {"error": "bad pattern"}, pattern="x"),
+            _call("run_shell_command", "success", {"output": "Output: (empty)\nSignal: 15"}, command="sleep 9"),
+            _call("mcp_server_tool", "success"),
+        ],
+    }
+    tools = _tools(parse_gemini(_session(prompt, reply), "t")[1])
+    assert [(s.name, s.status_code) for s in tools] == [
+        ("Edit", "OK"),
+        ("Read", "ERROR"),
+        ("Write", "ERROR"),
+        ("Grep", "ERROR"),
+        ("Bash", "ERROR"),
+        ("mcp_server_tool", "OK"),
+    ]
+
+
+def test_exit_code_printed_by_the_program_is_not_the_verdict():
+    output = "Output: Exit Code: 3\nProcess Group PGID: 1"
+    prompt = {"id": "u1", "timestamp": "2026-10-23T07:00:00Z", "type": "user", "content": [{"text": "go"}]}
+    reply = {
+        "id": "g1",
+        "timestamp": "2026-10-23T07:00:01Z",
+        "type": "gemini",
+        "toolCalls": [_call("run_shell_command", "success", {"output": output}, command="cat log")],
+    }
+    (tool,) = _tools(parse_gemini(_session(prompt, reply), "t")[1])
+    assert tool.status_code == "OK"
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"",
+        b"not json at all\n",
+        b"[1, 2]\nnull\n",
+        _session(),  # header only: a session opened and closed with no prompt
+        _session({"$set": {"lastUpdated": "2026-10-23T07:00:09Z"}}),
+        _session({"id": "u1", "type": "user", "content": 5, "timestamp": "nope"}),
+        _session({"id": "g1", "type": "gemini", "toolCalls": None, "tokens": "many", "model": 3}),
+        _session({"id": "g1", "type": "gemini", "toolCalls": [{"name": None, "args": [], "result": "x"}]}),
+    ],
+)
+def test_malformed_or_empty_input_does_not_crash(data):
+    trace, spans = parse_gemini(data, "t")
+    assert trace.trace_id == "t"
+    assert isinstance(spans, list)
+
+
+def test_empty_input_yields_no_spans():
+    assert parse_gemini(b"", "t")[1] == []
+    assert parse_gemini(_session(), "t")[1] == []
+
+
+def _map(name: str) -> dict:
+    _, spans = parse_gemini(_fixture(name), f"local:gemini-cli:{name}")
+    for span in spans:
+        if span.parent_id is not None:
+            span.attributes["cwd"] = FIXTURE_ROOT
+    return builder.build_map_from_spans(spans, session_id=f"local:gemini-cli:{name}", agent_tool="gemini-cli")
+
+
+def _fixture_strings(name: str) -> set[str]:
+    out: set[str] = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for v in value.values():
+                walk(v)
+        elif isinstance(value, list):
+            for v in value:
+                walk(v)
+        elif isinstance(value, str):
+            out.add(value)
+
+    for rec in _records(name):
+        walk(rec)
+    return out
+
+
+# Strings the map may carry: identifiers the redaction contract allows (model
+# and tool names), the CLI's own labels, and values with no free text.
+_ALLOWED = {"main", "user", "gemini", "success", "", "gemini-3.6-flash", "gemini-3-flash-preview"}
+
+
+@pytest.mark.parametrize("name", ["read_explain", "edit_and_run", "failed_shell"])
+def test_built_map_never_leaks_fixture_text(name):
+    doc = _map(name)
+    raw = json.dumps(doc)
+    for text in _fixture_strings(name):
+        if text in _ALLOWED or "PLACEHOLDER" not in text and "ARG-" not in text:
+            continue
+        # Every placeholder stands for prompt text, model output, a thought, a
+        # file's contents, a tool description or output, or a command argument.
+        assert text not in raw, text
+    # Outside a git repository a path collapses to a bucket label, so neither
+    # the absolute path nor the file name may appear.
+    for part in ("PLACEHOLDER", "ARG-1", "ARG-2", "session_context", FIXTURE_ROOT, "file_1", "file_2"):
+        assert part not in raw, part
+    assert doc["session"]["agentTool"] == "gemini-cli"
+
+
+def test_built_map_classifies_reads_edits_shell_and_the_failure():
+    def kinds(name: str) -> list[tuple]:
+        return [(e["kind"], e.get("verb"), e.get("err")) for e in _map(name)["events"] if e.get("tool")]
+
+    assert kinds("read_explain") == [("tool", None, False), ("read", None, False), ("read", None, False)]
+    assert kinds("edit_and_run")[1:] == [("read", None, False), ("edit", None, False), ("exec", "node", False)]
+    assert kinds("failed_shell") == [("exec", "node", True), ("exec", "node", False)]
+    failed = _map("failed_shell")
+    assert failed["totals"]["errors"] == 1
+    assert failed["session"]["models"] == ["gemini-3.6-flash"]
+
+
+def _with_project_hash(data: bytes, root: str) -> bytes:
+    """A fixture whose header hashes `root`, as the CLI writes it."""
+    real = hashlib.sha256(root.encode("utf-8")).hexdigest()
+    return data.replace(ZERO_HASH.encode(), real.encode(), 1)
+
+
+def _gemini_home(tmp_path: Path, root: str = FIXTURE_ROOT) -> Path:
+    home = tmp_path / ".gemini"
+    project = home / "tmp" / "project"
+    (project / "chats").mkdir(parents=True)
+    (project / ".project_root").write_text(root, encoding="utf-8")
+    for name in ("read_explain", "edit_and_run", "failed_shell"):
+        (project / "chats" / f"session-2026-10-23T07-00-{name}.jsonl").write_bytes(
+            _with_project_hash(_fixture(name), FIXTURE_ROOT)
+        )
+    (project / "chats" / "session-2026-10-23T07-01-empty.jsonl").write_bytes(_session())
+    (project / "logs.json").write_text("[]", encoding="utf-8")
+    return home
+
+
+def test_local_source_indexes_gemini_sessions(tmp_path):
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[_gemini_home(tmp_path)])
+    index = source._build_index()
+    # The three fixtures share one renumbered session id; the largest copy wins.
+    assert list(index) == ["local:gemini-cli:00000000-0000-4000-8000-000000000001"]
+    stats = source.discovery_stats()["gemini-cli"]
+    assert stats["skipped"] == {"empty_events": 1}
+    sid = next(iter(index))
+    assert source.get_cwd(sid) == FIXTURE_ROOT
+    assert source.get_project_name(sid) == "project"
+    spans = source.get_spans_by_session(sid)
+    assert {s.attributes["cwd"] for s in spans if s.parent_id is not None} == {FIXTURE_ROOT}
+
+
+def test_project_root_that_does_not_match_the_hash_is_ignored(tmp_path):
+    home = _gemini_home(tmp_path, root="/Users/dev/other")
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[home])
+    sid = next(iter(source._build_index()))
+    assert source.get_cwd(sid) is None
+    # The header still hashes FIXTURE_ROOT, so the mismatch is what rejects it.
+    header = json.loads(_with_project_hash(_fixture("read_explain"), FIXTURE_ROOT).splitlines()[0])
+    assert header["projectHash"] == hashlib.sha256(FIXTURE_ROOT.encode()).hexdigest()
+
+
+@pytest.mark.parametrize("name", ["read_explain", "edit_and_run", "failed_shell"])
+def test_fixtures_carry_no_real_project_hash(name):
+    assert _records(name)[0]["projectHash"] == ZERO_HASH
+
+
+def test_discovery_lists_gemini_cli_with_env_override(tmp_path, monkeypatch):
+    assert "gemini-cli" in discover.AGENTS
+    monkeypatch.setenv("AGENTPLAY_GEMINI_HOMES", str(tmp_path))
+    homes = discover.Homes.default()
+    assert homes.gemini_cli == [tmp_path]
+    assert homes.present()["gemini-cli"] == [tmp_path]
+    monkeypatch.delenv("AGENTPLAY_GEMINI_HOMES")
+    assert discover.Homes.default().gemini_cli == [Path.home() / ".gemini"]

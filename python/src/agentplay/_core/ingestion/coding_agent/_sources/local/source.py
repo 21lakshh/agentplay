@@ -1,4 +1,4 @@
-"""Local filesystem source — walks ~/.claude / ~/.codex / Copilot dirs.
+"""Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / Copilot dirs.
 
 Indexes JSONL session files under per-agent homes, detects the agent
 from the file head, and emits the universal `SpanData` shape via the
@@ -33,6 +33,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
     parse_cursor_store,
+    parse_gemini,
     parse_kiro,
     parse_opencode,
 )
@@ -1117,6 +1118,56 @@ def _copilot_vscode_json_session_id(head: bytes) -> tuple[str | None, bool]:
     return session_id, isinstance(requests, list) and len(requests) > 0
 
 
+def _gemini_header(head: bytes) -> dict | None:
+    """The Gemini CLI session header: the first record with `sessionId` and no `type`."""
+    for line in head.split(b"\n"):
+        try:
+            obj = json.loads(line)
+        except ValueError:  # blank, truncated, or split mid-character
+            continue
+        if isinstance(obj, dict) and "type" not in obj and isinstance(obj.get("sessionId"), str):
+            return obj
+    return None
+
+
+def _gemini_has_messages(head: bytes) -> bool:
+    """True when the head holds a `user` or `gemini` message, not only the header.
+
+    A session that was opened and closed without a prompt is just the header
+    line; it has nothing to map, same as `_kiro_event_count == 0`.
+    """
+    for line in head.split(b"\n"):
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") in ("user", "gemini"):
+            return True
+    return False
+
+
+def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | None:
+    """The project root of a Gemini CLI session.
+
+    The transcript stores only `projectHash` (sha256 of the project root). The
+    CLI writes the root itself to `.project_root` in the project folder
+    (`<home>/tmp/<slug>/.project_root`, two levels above `chats/<file>`).
+    When the header carries a hash, the root must hash to it, so a stale or
+    copied `.project_root` can't name the wrong project.
+    """
+    try:
+        root = (jsonl_file.parent.parent / ".project_root").read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not root:
+        return None
+    expected = (header or {}).get("projectHash")
+    if isinstance(expected, str) and expected:
+        if hashlib.sha256(root.encode("utf-8")).hexdigest() != expected:
+            return None
+    return root
+
+
 def _project_from_cwd(cwd: str) -> str | None:
     """Project name from the transcript's cwd.
 
@@ -1243,6 +1294,7 @@ class LocalSource:
         kiro_homes: list[Path] | None = None,
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
+        gemini_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1274,6 +1326,11 @@ class LocalSource:
         # `globalStorage/emptyWindowChatSessions/`), so this also gets the
         # whole-home rglob treatment, over both `.jsonl` and `.json`.
         self.copilot_vscode_homes = copilot_vscode_homes or []
+        # Gemini CLI writes a real per-session JSONL itself:
+        # `<home>/tmp/<project-slug>/chats/session-*.jsonl`. The session id
+        # comes from the header's `sessionId`, the cwd from the project
+        # folder's `.project_root` (see `_cwd_from_gemini_project`).
+        self.gemini_homes = gemini_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1297,6 +1354,7 @@ class LocalSource:
             *self.kiro_homes,
             *self.copilot_homes,
             *self.copilot_vscode_homes,
+            *self.gemini_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1501,6 +1559,18 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Gemini CLI: `<home>/tmp/<project-slug>/chats/session-*.jsonl`.
+        # `detect_agent` sniffs the header, so a stray `.jsonl` is skipped.
+        for home in self.gemini_homes:
+            tmp_dir = home / "tmp"
+            if not tmp_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", tmp_dir)
+                continue
+            for jsonl_file in tmp_dir.glob("*/chats/session-*.jsonl"):
+                ref = self._index_gemini_file(jsonl_file, home=home)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1512,7 +1582,8 @@ class LocalSource:
             + len(self.cursor_store_homes)
             + len(self.kiro_homes)
             + len(self.copilot_homes)
-            + len(self.copilot_vscode_homes),
+            + len(self.copilot_vscode_homes)
+            + len(self.gemini_homes),
         )
         return index
 
@@ -1817,6 +1888,63 @@ class LocalSource:
         project_name = _project_from_cwd(cwd) if cwd else None
 
         self._record_discovery("kiro", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=project_name,
+            cwd=cwd,
+            home=home,
+        )
+
+    def _index_gemini_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Gemini CLI session JSONL."""
+        if not jsonl_file.is_file():
+            # See _index_cc_file's identical guard: a directory/broken symlink
+            # is never tallied, only a genuinely empty real file is.
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("gemini-cli", "detection_failed")
+            return None
+        if agent != AgentType.GEMINI_CLI:
+            self._record_discovery("gemini-cli", "different_agent")
+            return None
+
+        if not _gemini_has_messages(head):
+            logger.debug("gemini-cli: %s has no messages; session skipped", jsonl_file)
+            self._record_discovery("gemini-cli", "empty_events")
+            return None
+
+        header = _gemini_header(head)
+        native_id = (header or {}).get("sessionId") or jsonl_file.stem
+        session_id = f"local:{agent}:{native_id}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+
+        cwd = _cwd_from_gemini_project(jsonl_file, header)
+        project_name = _project_from_cwd(cwd) if cwd else None
+
+        self._record_discovery("gemini-cli", "indexed")
         return session_id, _FileRef(
             path=jsonl_file,
             agent=agent,
@@ -2237,6 +2365,7 @@ class LocalSource:
             AgentType.OPENCODE: parse_opencode,
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
+            AgentType.GEMINI_CLI: parse_gemini,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
@@ -2255,6 +2384,12 @@ class LocalSource:
             user_id=user_id,
             project_name=ref.project_name,
         )
+        if ref.agent == AgentType.GEMINI_CLI and ref.cwd:
+            # Gemini CLI's transcript records no cwd; the indexer read the
+            # project root from `.project_root`. Every call ran there.
+            for span in spans:
+                if span.parent_id is not None and not span.attributes.get("cwd"):
+                    span.attributes["cwd"] = ref.cwd
         branch, branches = self._branch_history[session_id]
         root = next((span for span in spans if span.parent_id is None), None)
         if root is not None:
