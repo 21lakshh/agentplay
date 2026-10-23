@@ -11,6 +11,8 @@ import json
 import logging
 import os
 import re
+import shlex
+import shutil
 import sys
 import threading
 import warnings
@@ -352,7 +354,8 @@ def cmd_fix(args: argparse.Namespace) -> int:
     from . import fixes
 
     st = Store()
-    items = _health_fixes(st)
+    # Undo needs only the journal: a report that fails to compute must never block a revert.
+    items = [] if args.action == "undo" else _health_fixes(st)
     if args.action == "list":
         if not items:
             print("No fixes: nothing specific stands out in the last 30 days.")
@@ -377,6 +380,9 @@ def cmd_fix(args: argparse.Namespace) -> int:
         return 1
     if not fx["actions"]:
         print(f"agentplay: {fx['title']}: nothing to write; it names an integration to fix by hand.", file=sys.stderr)
+        return 1
+    if not 0 <= args.variant < len(fx["actions"]):
+        print(f"agentplay: {fx['title']}: --variant takes 0 to {len(fx['actions']) - 1}.", file=sys.stderr)
         return 1
     action = fx["actions"][args.variant]
     try:
@@ -427,7 +433,10 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                 autotune.save(st.base, cfg)
                 print(f"Add this to your crontab (crontab -e) to run daily at {args.at}:")
                 hh, mm = args.at.split(":")
-                print(f"  {int(mm)} {int(hh)} * * * {autotune.HOOK_COMMAND}")
+                # cron's PATH rarely holds pipx, uv or venv bin dirs, so name the command by absolute path.
+                found = shutil.which("agentplay")
+                exe = shlex.quote(os.path.abspath(found)) if found else f"{shlex.quote(sys.executable)} -m agentplay"
+                print(f"  {int(mm)} {int(hh)} * * * {autotune.HOOK_COMMAND.replace('agentplay', exe, 1)}")
             else:
                 path = autotune.install_hook()
                 cfg["when"] = "session-start"

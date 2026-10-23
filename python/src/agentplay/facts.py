@@ -18,7 +18,10 @@ from typing import Any
 
 from .builder import _NON_CALL_KINDS, _error_source, estimate_cost_usd
 
-FACTS_VERSION = 4
+FACTS_VERSION = 5
+# Files kept per session in `files`, busiest first; the rest fold into `filesRest`.
+# A huge session would otherwise add hundreds of KB to its index row and to /api/stats.
+MAX_FACT_FILES = 300
 
 # Outcomes whose whole cost counts as abandoned spend. `interrupted` is left
 # out on purpose: stopping an agent is often the right call.
@@ -184,6 +187,12 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
         # Two repos can share a display name; add their counters rather than drop one.
         prev = files.get(key) or {"hits": 0, "reads": 0, "edits": 0}
         files[key] = {"hits": prev["hits"] + hits, "reads": prev["reads"] + reads, "edits": prev["edits"] + edits}
+    files_rest: dict[str, int] = {}
+    if len(files) > MAX_FACT_FILES:
+        ranked = sorted(files.items(), key=lambda kv: (-kv[1]["hits"], -(kv[1]["reads"] + kv[1]["edits"]), kv[0]))
+        rest = [c for _, c in ranked[MAX_FACT_FILES:]]
+        files = dict(ranked[:MAX_FACT_FILES])
+        files_rest = {"count": len(rest), **{k: sum(c[k] for c in rest) for k in ("hits", "reads", "edits")}}
 
     edits = [e for e in evs if e["kind"] == "edit"]
     verifies = [e for e in evs if e["kind"] == "verify" and not e.get("err")]
@@ -235,6 +244,7 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
         "errorsByClass": dict(t.get("errorsByClass") or {}),
         "errorsBySource": by_source,
         "files": files,
+        **({"filesRest": files_rest} if files_rest else {}),
         "compactions": int(t.get("compactions") or 0),
         "preTokens": [int(e.get("preTokens") or 0) for e in evs if e["kind"] == "compaction"],
         "maxContext": int(t.get("maxContext") or 0),

@@ -185,11 +185,54 @@ def file_hash(text: str | None) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()[:16]
 
 
-def current(base: Path, repo: str, rel: str) -> str | None:
+def _read(path: Path) -> str | None:
+    # Bytes, not read_text: newline translation would turn a CRLF file into a whole-file rewrite.
     try:
-        return _target(base, repo, rel).read_text(encoding="utf-8")
+        return path.read_bytes().decode("utf-8")
     except FileNotFoundError:
         return None
+
+
+def current(base: Path, repo: str, rel: str) -> str | None:
+    return _read(_target(base, repo, rel))
+
+
+def _write(path: Path, text: str) -> None:
+    _atomic_write(path, text.encode("utf-8"), private=False)
+
+
+def _newline(text: str) -> str:
+    """The file's dominant line ending, so lines agentplay adds match the rest."""
+    crlf = text.count("\r\n")
+    return "\r\n" if crlf > text.count("\n") - crlf else "\n"
+
+
+def _ignore_locally(root: Path, rel: str) -> None:
+    """List a personal file agentplay just created in the repo's ``info/exclude`` so ``git add .`` skips it.
+
+    Not ``.gitignore``: that file is shared and tracked. Not journalled: an ignore
+    line for a personal file is harmless after undo. Only the literal anchored
+    line is checked (no git subprocess), so a redundant entry is possible when a
+    global ignore already covers the file.
+    """
+    try:
+        git = root / ".git"
+        if git.is_file():  # a linked worktree or submodule: ".git" holds "gitdir: <path>"
+            line = git.read_text(encoding="utf-8").strip()
+            if not line.startswith("gitdir:"):
+                return
+            git = (root / line[len("gitdir:"):].strip()).resolve()
+            common = git / "commondir"  # worktrees share the main checkout's info/exclude
+            if common.is_file():
+                git = (git / common.read_text(encoding="utf-8").strip()).resolve()
+        exclude = git / "info" / "exclude"
+        text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        if f"/{rel}" in text.splitlines():
+            return
+        sep = "" if not text or text.endswith("\n") else "\n"
+        _atomic_write(exclude, f"{text}{sep}/{rel}\n".encode(), private=False)
+    except (OSError, ValueError):
+        pass  # The fix itself is written and undoable; a missing ignore line must not fail it.
 
 
 # ------------------------------------------------------------------ edits
@@ -199,17 +242,28 @@ def _marker(fix_id: str) -> str:
     return f"<!-- agentplay:{fix_id} -->"
 
 
-def add_lines(text: str | None, fix_id: str, lines: list[str]) -> str:
+def add_lines(text: str | None, fix_id: str, lines: list[str], rel: str = "CLAUDE.md") -> str:
     """``text`` with ``lines`` added inside the managed block (created at the end if absent)."""
     text = text or ""
+    nl = _newline(text)
     tagged = [f"- {line} {_marker(fix_id)}" for line in lines]
-    if START in text and END in text and text.index(START) < text.index(END):
+    starts, ends = text.count(START), text.count(END)
+    if (starts, ends) == (1, 1) and text.index(START) < text.index(END):
         head, rest = text.split(START, 1)
         block, tail = rest.split(END, 1)
-        kept = [ln for ln in block.strip("\n").split("\n") if ln.strip() and _marker(fix_id) not in ln]
-        return f"{head}{START}\n" + "\n".join(kept + tagged) + f"\n{END}{tail}"
-    sep = "" if not text or text.endswith("\n\n") else "\n" if text.endswith("\n") else "\n\n"
-    return f"{text}{sep}{HEADING}\n\n{START}\n" + "\n".join(tagged) + f"\n{END}\n"
+        kept = [ln.rstrip("\r") for ln in block.split("\n")]
+        kept = [ln for ln in kept if ln.strip() and _marker(fix_id) not in ln]
+        return f"{head}{START}{nl}" + nl.join(kept + tagged) + f"{nl}{END}{tail}"
+    if starts or ends:
+        # Guessing where a half-deleted block ends would swallow the person's own text.
+        raise FixError(
+            "malformed_block",
+            f"The agentplay block in {rel} is broken: it needs one {START} line followed by one {END} line "
+            f"(found {starts} and {ends}). Fix the markers by hand, or delete them along with the lines between, "
+            "then try again.",
+        )
+    sep = "" if not text or text.endswith(nl * 2) else nl if text.endswith("\n") else nl * 2
+    return f"{text}{sep}{HEADING}{nl}{nl}{START}{nl}" + nl.join(tagged) + f"{nl}{END}{nl}"
 
 
 def remove_lines(text: str, fix_id: str) -> str:
@@ -234,21 +288,65 @@ def _apply_text(action: dict[str, Any], text: str | None, fix_id: str, rel: str)
         lines = [str(x) for x in action.get("lines") or [] if str(x).strip()]
         if not lines:
             raise FixError("empty_fix", "This fix has nothing to write.")
-        return add_lines(text, fix_id, lines)
+        return add_lines(text, fix_id, lines, rel)
     data = _settings(text, rel)
     if kind == "settings_allow":
-        allow = data.setdefault("permissions", {}).setdefault("allow", [])
+        allow = _field(_field(data, "permissions", dict, rel, "permissions"), "allow", list, rel, "permissions.allow")
         entry = str(action.get("entry") or "")
         if entry and entry not in allow:
             allow.append(entry)
     elif kind == "stop_hook":
-        stop = data.setdefault("hooks", {}).setdefault("Stop", [])
+        stop = hook_groups(data, rel, "Stop")
         cmd = str(action.get("command") or "")
         if not any(h.get("command") == cmd for g in stop for h in g.get("hooks", [])):
             stop.append({"hooks": [{"type": "command", "command": cmd}]})
     else:
         raise FixError("unknown_action", "This fix cannot be written to a file.")
-    return json.dumps(data, indent=2) + "\n"
+    return _dump(data, text)
+
+
+def _dump(data: dict[str, Any], like: str | None) -> str:
+    # JSON escapes newlines inside strings, so swapping every "\n" only changes line ends.
+    return (json.dumps(data, indent=2) + "\n").replace("\n", _newline(like or ""))
+
+
+_JSON_TYPES = ((bool, "true/false"), (dict, "an object"), (list, "an array"), (str, "a string"), (type(None), "null"))
+
+
+def _json_type(value: Any) -> str:
+    return next((name for t, name in _JSON_TYPES if isinstance(value, t)), "a number")
+
+
+def _field(data: dict[str, Any], key: str, kind: type, rel: str, where: str, create: bool = True) -> Any:
+    """``data[key]``, created empty if absent; a value of another type is refused, never overwritten."""
+    if key not in data:
+        if not create:
+            return kind()
+        data[key] = kind()
+    value = data[key]
+    if not isinstance(value, kind):
+        raise _shape_error(rel, where, value, _json_type(kind()))
+    return value
+
+
+def _shape_error(rel: str, where: str, value: Any, expected: str) -> FixError:
+    return FixError("bad_json", f"{rel} has {where} as {_json_type(value)}; expected {expected}; fix it by hand first.")
+
+
+def hook_groups(data: Any, rel: str, event: str, create: bool = True) -> list[Any]:
+    """The ``hooks.<event>`` groups, each checked to be ``{"hooks": [{...}, ...]}``."""
+    if not isinstance(data, dict):
+        raise _shape_error(rel, "the top level", data, "an object")
+    hooks = _field(data, "hooks", dict, rel, "hooks", create)
+    groups = _field(hooks, event, list, rel, f"hooks.{event}", create)
+    for i, group in enumerate(groups):
+        where = f"hooks.{event}[{i}]"
+        if not isinstance(group, dict):
+            raise _shape_error(rel, where, group, "an object")
+        for j, hook in enumerate(_field(group, "hooks", list, rel, f"{where}.hooks", create=False)):
+            if not isinstance(hook, dict):
+                raise _shape_error(rel, f"{where}.hooks[{j}]", hook, "an object")
+    return groups
 
 
 def drop_hook(groups: list[Any], command: Any) -> list[Any]:
@@ -266,22 +364,42 @@ def drop_hook(groups: list[Any], command: Any) -> list[Any]:
     return out
 
 
-def _undo_text(entry: dict[str, Any], text: str) -> str:
-    kind = entry["action"].get("kind")
+# Containers agentplay may add to settings, parents first; the journal records which were absent.
+_CONTAINERS = ("permissions", "permissions.allow", "hooks")
+
+
+def _has(data: Any, dotted: str) -> bool:
+    for part in dotted.split("."):
+        if not isinstance(data, dict) or part not in data:
+            return False
+        data = data[part]
+    return True
+
+
+def _undo_text(entry: dict[str, Any], text: str) -> str | None:
+    """``text`` without the fix; None when all that is left is what agentplay created, so the file can go."""
+    kind, rel = entry["action"].get("kind"), entry["file"]
     if kind == "claude_md":
-        return remove_lines(text, entry["fixId"])
-    data = _settings(text, entry["file"])
+        text = remove_lines(text, entry["fixId"])
+        return None if entry.get("created") and text.split() == f"{HEADING} {START} {END}".split() else text
+    data = _settings(text, rel)
     if kind == "settings_allow":
-        allow = (data.get("permissions") or {}).get("allow") or []
+        allow = _field(_field(data, "permissions", dict, rel, "permissions", False), "allow", list, rel,
+                       "permissions.allow", False)
         if entry["action"].get("entry") in allow:
             allow.remove(entry["action"]["entry"])
     elif kind == "stop_hook":
-        stop = (data.get("hooks") or {}).get("Stop")
+        stop = hook_groups(data, rel, "Stop", create=False)
         if stop:
             data["hooks"]["Stop"] = drop_hook(stop, entry["action"].get("command"))
             if not data["hooks"]["Stop"]:
                 del data["hooks"]["Stop"]
-    return json.dumps(data, indent=2) + "\n"
+    for dotted in reversed(entry.get("added") or []):
+        parent, _, key = dotted.rpartition(".")
+        holder = data.get(parent) if parent else data
+        if isinstance(holder, dict) and holder.get(key) in ({}, []):
+            del holder[key]
+    return None if entry.get("created") and not data else _dump(data, text)
 
 
 def preview(base: Path, repo: str, fix: dict[str, Any], action: dict[str, Any], rel: str | None = None) -> dict[str, Any]:
@@ -324,7 +442,7 @@ def _apply_locked(
            and not e.get("undoneAt") for e in entries):
         raise FixError("already_applied", f"This fix is already in {rel}. Undo it first to write it again.")
     target = _target(base, repo, rel)
-    before = target.read_text(encoding="utf-8") if target.exists() else None
+    before = _read(target)
     if expect_hash is not None and expect_hash != file_hash(before):
         raise FixError("changed", f"{rel} changed since the preview. Look again before applying.")
     after = _apply_text(action, before, fix["id"], rel)
@@ -332,7 +450,7 @@ def _apply_locked(
         # Already there (the person added it themselves): nothing to write, so nothing to undo later.
         raise FixError("already_present", f"{rel} already has this.")
     target.parent.mkdir(parents=True, exist_ok=True)
-    _atomic_write(target, after.encode("utf-8"))
+    _write(target, after)
     entry = {
         "id": uuid.uuid4().hex[:10],
         "fixId": fix["id"],
@@ -345,7 +463,12 @@ def _apply_locked(
         "metric": fix.get("metric"),
         "baseline": baseline,
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        # So undo can remove what agentplay itself added and nothing the person had.
+        "created": before is None,
     }
+    if action.get("kind") != "claude_md":
+        old, new = _settings(before, rel), _settings(after, rel)
+        entry["added"] = [k for k in _CONTAINERS if _has(new, k) and not _has(old, k)]
     entries.append(entry)
     try:
         _save_journal(base, entries)
@@ -354,8 +477,10 @@ def _apply_locked(
         if before is None:
             target.unlink(missing_ok=True)
         else:
-            _atomic_write(target, before.encode("utf-8"))
+            _write(target, before)
         raise
+    if before is None and rel in ("CLAUDE.local.md", ".claude/settings.local.json"):
+        _ignore_locally(Path(grants(base)[repo]).resolve(), rel)
     return entry
 
 
@@ -370,9 +495,13 @@ def _undo_locked(base: Path, entry_id: str, reason: str) -> dict[str, Any]:
     if entry is None:
         raise FixError("not_found", "Nothing to undo with that id.")
     target = _target(base, entry["repo"], entry["file"])
-    if target.exists():
-        text = target.read_text(encoding="utf-8")
-        _atomic_write(target, _undo_text(entry, text).encode("utf-8"))
+    text = _read(target)
+    if text is not None:
+        after = _undo_text(entry, text)
+        if after is None:
+            target.unlink()
+        else:
+            _write(target, after)
     entry["undoneAt"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     entry["undoReason"] = reason
     _save_journal(base, entries)

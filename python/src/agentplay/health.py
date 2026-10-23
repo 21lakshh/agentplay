@@ -40,7 +40,7 @@ QUIET_FORMS = {
     "vitest": "vitest run --reporter=dot",
     "pnpm vitest": "pnpm vitest run --reporter=dot",
     "cargo test": "cargo test -q",
-    "go test": "go test ./... (without -v)",
+    "go test": "go test ./...",  # quiet by default; only -v is verbose
 }
 NOISY_BYTES = 40_000  # about 10k tokens of output per run
 
@@ -112,6 +112,7 @@ def totals(rows: Iterable[dict[str, Any]]) -> Totals:
             t.tok_cr += int(tok.get("cr") or 0)
         t.compacting += int((f.get("compactions") or 0) > 0)
         t.reads += sum(int(x.get("reads") or 0) for x in (f.get("files") or {}).values())
+        t.reads += int((f.get("filesRest") or {}).get("reads") or 0)  # files past facts.MAX_FACT_FILES
         t.rereads_ac += int(f.get("rereadsAfterCompaction") or 0)
         t.config_errors += _config_errors(f)
     return t
@@ -374,9 +375,9 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _worst(rows: list[dict[str, Any]], key: str) -> list[dict[str, Any]]:
     def why(f: dict[str, Any]) -> tuple[float, str] | None:
         if key == "shipping" and f.get("edited") and not f.get("prsCreated"):
-            return f.get("costUsd", 0), "edited code, no PR"
+            return f.get("costUsd") or 0, "edited code, no PR"
         if key == "verification" and f.get("edited") and not f.get("verifyAfterLastEdit"):
-            return f.get("costUsd", 0), "no check after the last edit"
+            return f.get("costUsd") or 0, "no check after the last edit"
         if key == "efficiency" and (f.get("errors", 0) + f.get("retries", 0)):
             n = f.get("errors", 0) + f.get("retries", 0)
             return n, f"{n} failed calls and retries"

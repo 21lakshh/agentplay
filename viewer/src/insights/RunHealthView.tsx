@@ -16,7 +16,7 @@ import {
   type HealthComponent,
   type HealthReport,
 } from '@/core/health';
-import { Panel } from './panels';
+import { ErrorText, Panel } from './panels';
 
 type Range = { from?: string; to?: string };
 
@@ -213,13 +213,32 @@ const COMPONENT_LABEL: Record<string, string> = {
   environment: 'Environment',
 };
 
-function PointsOnTheTable({ h, range }: { h: HealthReport; range: Range }) {
+export function PointsOnTheTable({ h, range }: { h: HealthReport; range: Range }) {
   const write = useWrite();
   const [showAll, setShowAll] = useState(false);
+  // Own flag: write.isPending drops between sequential calls and would re-enable the button mid-run.
+  const [applying, setApplying] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
   const applied = new Map(h.applied.map((a) => [a.fixId, a]));
   const repos = new Map(h.repos.map((r) => [r.name, r]));
   const fixes = showAll ? h.fixes : h.fixes.slice(0, 5);
   const pending = h.fixes.filter((f) => !applied.has(f.id) && f.actions.length && repos.get(f.repo)?.granted);
+  const applyAll = async () => {
+    setApplying(true);
+    setBatchError(null);
+    let done = 0;
+    try {
+      // One at a time: the server serializes writes, and we stop at the first failure.
+      for (const f of pending) {
+        await write.mutateAsync({ path: '/api/fix', body: { action: 'apply', fix: f.id, i: 0, ...range } });
+        done++;
+      }
+    } catch (e) {
+      setBatchError(`Applied ${done} of ${pending.length}. "${pending[done].title}" failed: ${(e as Error).message}`);
+    } finally {
+      setApplying(false);
+    }
+  };
   const gain = h.fixes.filter((f) => !applied.has(f.id)).reduce((s, f) => s + f.points, 0);
   return (
     <Panel
@@ -230,23 +249,15 @@ function PointsOnTheTable({ h, range }: { h: HealthReport; range: Range }) {
         pending.length ? (
           <Button
             size="sm"
-            disabled={write.isPending}
-            onClick={() => {
-              for (const f of pending) {
-                write.mutate({ path: '/api/fix', body: { action: 'apply', fix: f.id, i: 0, ...range } });
-              }
-            }}
+            disabled={applying}
+            onClick={() => void applyAll()}
           >
             Apply {pending.length} {pending.length === 1 ? 'fix' : 'fixes'}
           </Button>
         ) : null
       }
     >
-      {write.isError ? (
-        <p role="alert" className="rounded-md bg-ds-danger-subtlest px-3 py-2 ds-text-body-xs-medium text-ds-danger-darkest">
-          {(write.error as Error).message}
-        </p>
-      ) : null}
+      {batchError ? <ErrorText>{batchError}</ErrorText> : null}
       {h.fixes.length ? (
         <>
           <p className="ds-text-body-xs-medium text-ds-text-subtle">
@@ -297,15 +308,24 @@ function FixCard({
   const open = useOpenSession();
   const [preview, setPreview] = useState<{ i: number; p: FixPreview } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const showPreview = async (i: number) => {
     if (preview?.i === i) return setPreview(null);
     if (!source.fixPreview) return;
+    setPreviewing(true);
+    setPreviewError(null);
     try {
       setPreview({ i, p: await source.fixPreview({ fix: fix.id, i, ...range }) });
-    } catch {
+    } catch (e) {
       setPreview(null);
+      setPreviewError(`Could not load the preview: ${(e as Error).message}`);
+    } finally {
+      setPreviewing(false);
     }
   };
+  // A preview (and its hash) is stale once the file has been written or restored.
+  const onWritten = { onSuccess: () => setPreview(null) };
   return (
     <li className={cn('flex flex-col gap-2 rounded-lg border p-3', applied ? 'border-ds-brand-subtlest bg-ds-brand-lightest' : 'border-ds-border-subtlest')}>
       <div className="flex gap-3">
@@ -347,7 +367,7 @@ function FixCard({
                   size="sm"
                   className="h-7 px-1"
                   disabled={write.isPending}
-                  onClick={() => write.mutate({ path: '/api/fix', body: { action: 'undo', entry: applied.id } })}
+                  onClick={() => write.mutate({ path: '/api/fix', body: { action: 'undo', entry: applied.id } }, onWritten)}
                 >
                   Undo
                 </Button>
@@ -363,15 +383,18 @@ function FixCard({
                     primary={i === 0}
                     disabled={write.isPending}
                     onClick={() =>
-                      write.mutate({
-                        path: '/api/fix',
-                        body: { action: 'apply', fix: fix.id, i, hash: preview?.i === i ? preview.p.hash : undefined, ...range },
-                      })
+                      write.mutate(
+                        {
+                          path: '/api/fix',
+                          body: { action: 'apply', fix: fix.id, i, hash: preview?.i === i ? preview.p.hash : undefined, ...range },
+                        },
+                        onWritten
+                      )
                     }
                   />
                 ))}
-                <Button variant="link" size="sm" className="h-7 px-1 text-xs" onClick={() => void showPreview(0)}>
-                  {preview ? 'Hide change' : 'Preview change'}
+                <Button variant="link" size="sm" className="h-7 px-1 text-xs" disabled={previewing} onClick={() => void showPreview(0)}>
+                  {previewing ? 'Loading preview' : preview ? 'Hide change' : 'Preview change'}
                 </Button>
                 <span className="ds-text-body-xs-medium text-ds-text-subtle">
                   or run <code className="rounded bg-ds-gray-subtlest px-1.5 py-0.5 font-mono text-ds-text-darker">agentplay fix apply {fix.id}</code>
@@ -409,6 +432,8 @@ function FixCard({
           </div>
         </div>
       </div>
+      {write.isError ? <ErrorText>{(write.error as Error).message}</ErrorText> : null}
+      {previewError ? <ErrorText>{previewError}</ErrorText> : null}
       {preview ? (
         <div className="ml-[3.75rem] overflow-hidden rounded-md border border-ds-border-subtlest">
           <div className="flex justify-between bg-ds-gray-subtlest px-3 py-1 font-mono text-xs text-ds-text-default">

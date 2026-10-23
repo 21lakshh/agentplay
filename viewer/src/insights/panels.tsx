@@ -26,6 +26,15 @@ import type { TermKey } from './glossary';
 
 // ------------------------------------------------------------------ shared
 
+/** Inline failure message, announced to screen readers. */
+export function ErrorText({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="rounded-md bg-ds-danger-subtlest px-3 py-2 ds-text-body-xs-medium text-ds-danger-darkest">
+      {children}
+    </p>
+  );
+}
+
 export function Panel({
   title,
   term,

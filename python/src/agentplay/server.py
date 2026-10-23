@@ -535,8 +535,8 @@ class _Handler(BaseHTTPRequestHandler):
             sid = str(r.get("sessionId") or "")
             h = str(r.get("contentHash") or "")
             entry = indexed.get(sid)
-            if isinstance(entry, dict) and entry.get("hash") == h:
-                out[sid] = entry.get("terms") or {}
+            if isinstance(entry, dict) and entry.get("hash") == h and isinstance(entry.get("terms"), dict):
+                out[sid] = entry["terms"]
                 continue
             key = (sid, h)
             if key not in self.search_mem:

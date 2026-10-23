@@ -234,7 +234,7 @@
     "reworkEdits": 0,
     "stepsToFirstEdit": 5
    },
-   "factsVersion": 4
+   "factsVersion": 5
   },
   {
    "sessionId": "local:codex:0199a3b2-demo-4f0c-8e55-000000000002",
@@ -389,7 +389,7 @@
     "reworkEdits": 0,
     "stepsToFirstEdit": 7
    },
-   "factsVersion": 4
+   "factsVersion": 5
   },
   {
    "sessionId": "local:cursor:c1d2e3f4-demo-4a5b-9c8d-000000000003",
@@ -486,7 +486,7 @@
     "reworkEdits": 0,
     "stepsToFirstEdit": 2
    },
-   "factsVersion": 4
+   "factsVersion": 5
   }
  ]
 }

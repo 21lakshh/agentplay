@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -9,15 +10,18 @@ from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from . import __version__, builder, discover, facts, fixes, search
-from .store import Store
+from .store import Store, _atomic_write
 
 logger = logging.getLogger("agentplay.pipeline")
 
 # How often a long build writes the index mid-run (seconds).
 SAVE_EVERY_S = 2.0
+# A repo name whose checkout could not be found is looked for again after this long.
+UNRESOLVED_RETRY_S = 7 * 86400
 
 
 @dataclass
@@ -129,6 +133,15 @@ def _sync_titles(store: Store, cand: discover.Candidate, source: Any, *, titles:
     return changed
 
 
+def _unresolved(base: Path) -> dict[str, float]:
+    """Repo name -> when its checkout was last looked for in vain (``repos-unresolved.json``)."""
+    try:
+        raw = json.loads((base / "repos-unresolved.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): float(v) for k, v in raw.items() if isinstance(v, int | float)} if isinstance(raw, dict) else {}
+
+
 def _sync_facts(store: Store, session_id: str) -> bool:
     """Recompute an unchanged session's facts from its stored map when they are missing or stale.
 
@@ -211,6 +224,11 @@ def build_all(
     # roots were): each is re-resolved once per run from one of its sessions.
     known_roots = fixes.known_roots(store.base)
     tried: set[str] = set()
+    # Names whose session parsed, so a missing root really means no checkout (a failed parse proves nothing).
+    looked: set[str] = set()
+    # Names that failed to resolve recently: re-parsing a session for them each run costs a lot for nothing.
+    missed = _unresolved(store.base)
+    waiting = {n for n, at in missed.items() if time.time() - at < UNRESOLVED_RETRY_S}
     for i, c in enumerate(cands):
         if pending and time.monotonic() - last_save >= SAVE_EVERY_S:
             store.save_index()
@@ -222,12 +240,13 @@ def build_all(
             report.by_agent[c.agent] += 1
             if _sync_titles(store, c, source, titles=titles) | _sync_facts(store, c.session_id):
                 pending = True
-            need = {n for n in (store.index.get(c.session_id) or {}).get("repos") or []} - set(known_roots) - tried
+            need = set((store.index.get(c.session_id) or {}).get("repos") or []) - set(known_roots) - tried - waiting
             if need:
                 tried |= need
                 try:
                     discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__,
                                        resolver=resolver)
+                    looked |= need
                 except Exception:  # noqa: BLE001 - only for its roots; the stored map stays as it is
                     logger.debug("root lookup failed for %s", c.session_id, exc_info=True)
             continue
@@ -257,6 +276,10 @@ def build_all(
         # Only names a stored map uses: a checkout merely passed on the way is not recorded.
         used = {n for r in store.index.values() for n in r.get("repos") or []}
         fixes.record_roots(store.base, {n: p for n, p in resolver.roots().items() if n in used})
+        failed = looked - set(resolver.roots())
+        if failed:
+            _atomic_write(store.base / "repos-unresolved.json",
+                          json.dumps({**missed, **dict.fromkeys(failed, time.time())}).encode("utf-8"))
         search.refresh(store)
     except OSError as exc:  # the index is what matters; search catches up next run
         report.errors.append(f"search index: {exc}")

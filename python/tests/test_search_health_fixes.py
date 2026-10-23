@@ -267,7 +267,8 @@ def test_health_route_and_writes_through_the_api(repo):
                                                          "from": "2098-12-01", "to": "2099-01-01"})
         assert status == 200 and (root / "CLAUDE.md").exists()
         status, _ = _req(httpd, "POST", "/api/fix", {"action": "undo", "entry": done["entry"]["id"]})
-        assert status == 200 and "pytest" not in (root / "CLAUDE.md").read_text()
+        # The fix created CLAUDE.md, so undoing it removes the file.
+        assert status == 200 and not (root / "CLAUDE.md").exists()
         status, at = _req(httpd, "GET", "/api/autotune")
         assert status == 200 and at["repos"][0]["granted"] is True
     finally:

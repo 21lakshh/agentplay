@@ -286,7 +286,7 @@ function SessionRow({
         <SessionRowBadges s={s} unavailable={unavailable} />
       </button>
       {s.search && onJump ? (
-        <SearchMatches search={s.search} selected={selected} onJump={onJump} />
+        <SearchMatches key={s.search.seqs.join(',')} search={s.search} selected={selected} onJump={onJump} />
       ) : null}
       {/* Always there for the selected row -- you just clicked it, so that
        * is where the next step belongs. Quiet on the rest until pointed at
@@ -364,7 +364,8 @@ const TOUCH_DOT: Record<string, string> = {
 
 /**
  * What a searched session matched on, as chips that open it at that event,
- * and on the selected row a stepper through every matching event.
+ * and on the selected row a stepper through every matching event. Callers
+ * key it on the match list so the stepper restarts when the matches change.
  */
 function SearchMatches({
   search,

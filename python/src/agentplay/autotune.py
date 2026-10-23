@@ -10,7 +10,8 @@ Off until turned on for a repo. Each run (at most once a day unless forced):
    * a permission or hook fix is queued for the person to approve.
 3. Measures every fix it applied on that fix's own metric over the sessions
    since. After 15 sessions with less than a 10% improvement the fix is
-   undone and logged as retired.
+   undone, logged as retired and not applied by Autotune again. A change the
+   person approved is measured but never retired.
 
 State lives in ``~/.agentplay/autotune.json``; writes go through ``fixes.apply``.
 """
@@ -34,14 +35,20 @@ LOG_MAX = 200
 
 
 def config(base: Path) -> dict[str, Any]:
+    path = base / CONFIG
     try:
-        raw = json.loads((base / CONFIG).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
         raw = {}
-    raw = raw if isinstance(raw, dict) else {}
+    except (OSError, ValueError):
+        raw = None
+    # Saving defaults over a file we could not read would erase repos, approvals and retired fixes.
+    if not isinstance(raw, dict):
+        raise fixes.FixError("bad_json", f"{path} could not be read as a JSON object; fix or remove it, then try again.")
     raw.setdefault("repos", {})
     raw.setdefault("pending", [])
     raw.setdefault("dismissed", [])
+    raw.setdefault("retired", [])
     raw.setdefault("log", [])
     raw.setdefault("when", "manual")
     return raw
@@ -162,6 +169,9 @@ def _run(store: Any, force: bool, today: str | None) -> dict[str, Any]:
     for fx in health.fixes(rows):
         if fx["repo"] not in enabled or fx["id"] in done or fx["id"] in queued or fx["id"] in cfg["dismissed"]:
             continue
+        # A fix retired for no effect would otherwise be re-applied the next day, forever.
+        if fx["id"] in cfg["retired"]:
+            continue
         md = next((a for a in fx["actions"] if a["kind"] == "claude_md"), None)
         repo_rows = [r for r in rows if fx["repo"] in (r.get("repos") or [])]
         if md:
@@ -189,8 +199,20 @@ def _run(store: Any, force: bool, today: str | None) -> dict[str, Any]:
     for e in effects(store):
         if e.get("source") != "autotune" or e.get("baseline") is None or e.get("current") is None:
             continue
+        # A revoked repo, or one with Autotune switched off, is left as it is until it is back on.
+        if e["repo"] not in enabled:
+            continue
         if e["sessionsSince"] >= RETIRE_AFTER and not _improved(e["metric"]["name"], e["baseline"], e["current"]):
-            fixes.undo(base, e["id"], reason="no measurable effect")
+            try:
+                fixes.undo(base, e["id"], reason="no measurable effect")
+            except fixes.FixError as exc:
+                # Retried on later runs, but logged once rather than every day the checkout stays broken.
+                if not any(x["kind"] == "error" and x.get("entry") == e["id"] for x in cfg["log"]):
+                    _log(cfg, "error", title=e["title"], repo=e["repo"], file=e["file"], entry=e["id"],
+                         detail=exc.message)
+                continue
+            if e["fixId"] not in cfg["retired"]:
+                cfg["retired"].append(e["fixId"])
             _log(cfg, "retire", title=e["title"], repo=e["repo"], file=e["file"],
                  detail=f"no measurable change after {e['sessionsSince']} sessions")
             summary["retired"].append(e["title"])
@@ -210,7 +232,8 @@ def _approve(store: Any, fix_id: str) -> dict[str, Any]:
     item = next((p for p in cfg["pending"] if p["fixId"] == fix_id), None)
     if item is None:
         raise fixes.FixError("not_found", "That fix is no longer waiting.")
-    entry = fixes.apply(store.base, item["fix"], item["action"], source="autotune", baseline=item.get("baseline"))
+    # Not "autotune": the retire loop only removes what Autotune wrote unasked, never what the person approved.
+    entry = fixes.apply(store.base, item["fix"], item["action"], source="approved", baseline=item.get("baseline"))
     cfg["pending"] = [p for p in cfg["pending"] if p["fixId"] != fix_id]
     _log(cfg, "approve", title=item["fix"]["title"], repo=item["fix"]["repo"], file=item["action"].get("file"),
          entry=entry["id"])
@@ -252,7 +275,8 @@ def status(store: Any) -> dict[str, Any]:
 
 
 def _claude_settings() -> Path:
-    return Path.home() / ".claude" / "settings.json"
+    # Resolved so a write replaces a dotfiles-managed symlink's target, not the symlink itself.
+    return (Path.home() / ".claude" / "settings.json").resolve()
 
 
 def hook_installed() -> bool:
@@ -260,7 +284,13 @@ def hook_installed() -> bool:
         data = json.loads(_claude_settings().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    groups = ((data.get("hooks") or {}).get("SessionStart") or []) if isinstance(data, dict) else []
+    try:
+        groups = fixes.hook_groups(data, str(_claude_settings()), "SessionStart", create=False)
+    except fixes.FixError:
+        return False  # a hand-broken file holds no hook of ours; install_hook reports the shape
+    return _has_hook(groups)
+
+def _has_hook(groups: list[Any]) -> bool:
     return any(h.get("command") == HOOK_COMMAND for g in groups for h in g.get("hooks", []))
 
 
@@ -271,12 +301,12 @@ def install_hook() -> Path:
         data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     except ValueError as exc:
         raise fixes.FixError("bad_json", f"{path} is not valid JSON; fix it by hand first.") from exc
-    if not hook_installed():
-        data.setdefault("hooks", {}).setdefault("SessionStart", []).append(
-            {"hooks": [{"type": "command", "command": HOOK_COMMAND}]}
-        )
+    # Claude Code's own settings: an unexpected shape is refused, never overwritten.
+    groups = fixes.hook_groups(data, str(path), "SessionStart")
+    if not _has_hook(groups):
+        groups.append({"hooks": [{"type": "command", "command": HOOK_COMMAND}]})
         path.parent.mkdir(parents=True, exist_ok=True)
-        fixes._atomic_write(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
+        fixes._atomic_write(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"), private=False)
     return path
 
 
@@ -286,11 +316,14 @@ def uninstall_hook() -> None:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    groups = (data.get("hooks") or {}).get("SessionStart") or []
+    try:
+        groups = fixes.hook_groups(data, str(path), "SessionStart", create=False)
+    except fixes.FixError:
+        return  # never rewrite a file whose shape we do not understand
     kept = fixes.drop_hook(groups, HOOK_COMMAND)
     if kept != groups:
         if kept:
             data["hooks"]["SessionStart"] = kept
         else:
             del data["hooks"]["SessionStart"]
-        fixes._atomic_write(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"))
+        fixes._atomic_write(path, (json.dumps(data, indent=2) + "\n").encode("utf-8"), private=False)

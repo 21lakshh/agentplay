@@ -19,9 +19,9 @@ from typing import Any
 
 from .facts import command_label
 
-SEARCH_VERSION = 2
+SEARCH_VERSION = 3
 FACETS = ("file", "cmd", "mcp", "skill", "subagent", "model", "repo", "host", "err")
-# Postings kept per term per session: enough to step through, small enough to load.
+# Postings kept per term, per touch kind, per session: enough to step through, small enough to load.
 MAX_SEQS = 40
 _FACET_RE = re.compile(rf"^({'|'.join(FACETS)}):(.+)$", re.I)
 
@@ -29,15 +29,25 @@ TOUCHES = ("hit", "read", "edit", "fail")
 
 
 def postings(doc: dict[str, Any]) -> dict[str, list[list[Any]]]:
-    """``term -> [[seq, touch], ...]`` for one map. Session-level terms carry seq None."""
+    """``term -> [[seq, touch], ...]`` for one map. Session-level terms carry seq None.
+
+    Each touch kind keeps its first ``MAX_SEQS`` postings; when it overflows, its
+    first posting carries the true total as a third item.
+    """
     out: dict[str, list[list[Any]]] = {}
+    firsts: dict[tuple[str, str], list[Any]] = {}
+    totals: dict[tuple[str, str], int] = {}
     files = {f.get("id"): f for f in doc.get("files") or []}
     repos = {r.get("id"): r.get("name") for r in doc.get("repos") or []}
 
     def add(term: str, seq: int | None, touch: str) -> None:
-        lst = out.setdefault(term.lower(), [])
-        if len(lst) < MAX_SEQS:
-            lst.append([seq, touch])
+        term = term.lower()
+        key = (term, touch)
+        totals[key] = totals.get(key, 0) + 1
+        if totals[key] <= MAX_SEQS:
+            posting = [seq, touch]
+            firsts.setdefault(key, posting)
+            out.setdefault(term, []).append(posting)
 
     for e in doc.get("events") or []:
         seq = e.get("seq")
@@ -72,6 +82,9 @@ def postings(doc: dict[str, Any]) -> dict[str, list[list[Any]]]:
     for name in repos.values():
         if name:
             add(f"repo:{name}", None, "hit")
+    for key, n in totals.items():
+        if n > MAX_SEQS:
+            firsts[key].append(n)
     return out
 
 
@@ -108,7 +121,8 @@ def refresh(store: Any) -> int:
     for sid, row in store.index.items():
         h = str(row.get("contentHash") or "")
         prev = old.get(sid)
-        if isinstance(prev, dict) and prev.get("hash") == h:
+        # An empty hash says nothing about content, so it never counts as current.
+        if h and isinstance(prev, dict) and prev.get("hash") == h:
             out[sid] = prev
             continue
         doc = store.get(sid)
@@ -170,39 +184,56 @@ def query(terms_by_session: dict[str, dict[str, list[list[Any]]]], q: str) -> di
         hits = [(t, p) for t, ps in terms.items() if _matches(t, facet, value) for p in ps]
         if not hits:
             continue
-        seqs = sorted({p[0] for _, p in hits if p[0] is not None})
         groups: dict[tuple[str, str], list[int | None]] = {}
-        for t, (seq, touch) in hits:
+        totals: dict[tuple[str, str], int] = {}
+        for t, (seq, touch, *total) in hits:
             # The basename and the full-path term of one file are the same match.
             key = (_label(t), touch)
             if seq not in groups.setdefault(key, []):
                 groups[key].append(seq)
+            if total:
+                totals[key] = max(totals.get(key, 0), total[0])
+        # Stored postings are capped per touch kind, so cap per kind here too or a
+        # busy file's reads would crowd its edits out of the stepper.
+        by_touch: dict[str, set[int]] = {}
+        for (_, touch), s in groups.items():
+            by_touch.setdefault(touch, set()).update(x for x in s if x is not None)
+        seqs = sorted({x for v in by_touch.values() for x in sorted(v)[:MAX_SEQS]})
+        counts = {k: max(len(s), totals.get(k, 0)) for k, s in groups.items()}
         chips = sorted(
             (
                 {
-                    "label": f"{_VERBS.get(touch, touch)} {label}" + (f" {len(s)}×" if s[0] is not None else ""),
+                    "label": f"{_VERBS.get(touch, touch)} {label}" + (f" {counts[label, touch]}×" if s[0] is not None else ""),
                     "touch": touch,
                     "seq": min((x for x in s if x is not None), default=None),
-                    "n": len(s),
+                    "n": counts[label, touch],
                 }
                 for (label, touch), s in groups.items()
             ),
             key=lambda c: (-TOUCHES.index(c["touch"]) if c["touch"] in TOUCHES else 0, -c["n"]),
         )
-        out[sid] = {"count": len(seqs) or len(hits), "seqs": seqs[:MAX_SEQS], "chips": chips[:4]}
+        truncated = bool(totals)
+        count = sum(counts.values()) if truncated else len(seqs) or len(hits)
+        out[sid] = {"count": count, "seqs": seqs, "chips": chips[:4]}
     return out
 
 
 def argument_fallback(terms_by_session: dict[str, dict[str, list[list[Any]]]], q: str) -> tuple[str, dict[str, Any]] | None:
     """A query that names command arguments (``pnpm test auth``) can't match: arguments
-    are never stored. Retry with the longest command prefix that does match."""
+    are never stored. Retry with the longest leading words that exactly name a recorded
+    command (``pnpm test``) or its family (``git`` for ``git push``), never a substring."""
     facet, value = parse(q)
     if facet not in (None, "cmd"):
         return None
     words = value.split()
     for n in range(len(words) - 1, 0, -1):
         prefix = " ".join(words[:n])
-        hits = query(terms_by_session, f"cmd:{prefix}")
+        own = f"cmd:{prefix}"
+        exact = {
+            sid: {t: ps for t, ps in terms.items() if t == own or t.startswith(own + " ")}
+            for sid, terms in terms_by_session.items()
+        }
+        hits = query(exact, own)
         if hits:
             return prefix, hits
     return None

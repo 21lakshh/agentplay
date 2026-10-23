@@ -7,7 +7,7 @@ import { useSessionMapSource } from '@/data/SourceContext';
 import { cn } from '@/lib/utils';
 import type { AppliedEffect, AutotuneStatus } from '@/core/health';
 import { InfoButton } from './InfoButton';
-import { Panel } from './panels';
+import { ErrorText, Panel } from './panels';
 
 export function AutotuneView() {
   const source = useSessionMapSource();
@@ -44,11 +44,7 @@ export function AutotuneView() {
 
 function WriteError({ write }: { write: ReturnType<typeof useWrite> }) {
   if (!write.isError) return null;
-  return (
-    <p role="alert" className="rounded-md bg-ds-danger-subtlest px-3 py-2 ds-text-body-xs-medium text-ds-danger-darkest">
-      {(write.error as Error).message}
-    </p>
-  );
+  return <ErrorText>{(write.error as Error).message}</ErrorText>;
 }
 
 function Summary({ s }: { s: AutotuneStatus }) {
@@ -103,12 +99,12 @@ function Repos({ s }: { s: AutotuneStatus }) {
                     <span className="inline-flex items-center gap-1 ds-text-body-xs-semibold text-ds-success-darker">
                       <Check size={13} aria-hidden /> Can write
                     </span>
-                    <Button variant="link" size="sm" className="h-7 px-1 text-xs" onClick={() => write.mutate({ path: '/api/repos', body: { action: 'revoke', repo: r.name } })}>
+                    <Button variant="link" size="sm" className="h-7 px-1 text-xs" disabled={write.isPending} onClick={() => write.mutate({ path: '/api/repos', body: { action: 'revoke', repo: r.name } })}>
                       Revoke
                     </Button>
                   </>
                 ) : r.root ? (
-                  <Button size="sm" className="h-7 text-xs" onClick={() => write.mutate({ path: '/api/repos', body: { action: 'grant', repo: r.name } })}>
+                  <Button size="sm" className="h-7 text-xs" disabled={write.isPending} onClick={() => write.mutate({ path: '/api/repos', body: { action: 'grant', repo: r.name } })}>
                     Allow writes
                   </Button>
                 ) : (
@@ -121,6 +117,7 @@ function Repos({ s }: { s: AutotuneStatus }) {
                     <input
                       type="checkbox"
                       checked={r.enabled}
+                      disabled={write.isPending}
                       onChange={(e) => write.mutate({ path: '/api/autotune', body: { action: e.target.checked ? 'enable' : 'disable', repo: r.name } })}
                       className="size-4 accent-[var(--ds-brand-default)]"
                     />
@@ -130,7 +127,7 @@ function Repos({ s }: { s: AutotuneStatus }) {
                     <input
                       type="checkbox"
                       checked={r.claudeMd === 'auto'}
-                      disabled={!r.enabled}
+                      disabled={!r.enabled || write.isPending}
                       onChange={(e) => write.mutate({ path: '/api/autotune', body: { action: 'shared', repo: r.name, value: e.target.checked } })}
                       className="size-4 accent-[var(--ds-brand-default)]"
                     />
@@ -195,13 +192,13 @@ function Waiting({ s }: { s: AutotuneStatus }) {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" className="h-7 text-xs" onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'approve', fixId: p.fixId } })}>
+                <Button size="sm" className="h-7 text-xs" disabled={write.isPending} onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'approve', fixId: p.fixId } })}>
                   {p.action.label}
                 </Button>
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'dismiss', fixId: p.fixId } })}>
+                <Button variant="outline" size="sm" className="h-7 text-xs" disabled={write.isPending} onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'dismiss', fixId: p.fixId } })}>
                   Not now
                 </Button>
-                <Button variant="link" size="sm" className="h-7 px-1 text-xs" onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'never', fixId: p.fixId } })}>
+                <Button variant="link" size="sm" className="h-7 px-1 text-xs" disabled={write.isPending} onClick={() => write.mutate({ path: '/api/autotune', body: { action: 'never', fixId: p.fixId } })}>
                   Never suggest this
                 </Button>
               </div>
