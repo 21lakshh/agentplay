@@ -61,6 +61,11 @@ def _log(cfg: dict[str, Any], kind: str, **kw: Any) -> None:
 
 
 def set_repo(base: Path, repo: str, *, enabled: bool | None = None, claude_md: str | None = None) -> dict[str, Any]:
+    with fixes.write_lock(base):
+        return _set_repo(base, repo, enabled, claude_md)
+
+
+def _set_repo(base: Path, repo: str, enabled: bool | None, claude_md: str | None) -> dict[str, Any]:
     cfg = config(base)
     r = cfg["repos"].setdefault(repo, {"enabled": False, "claudeMd": "ask"})
     if enabled is not None:
@@ -107,14 +112,17 @@ def metric(rows: list[dict[str, Any]], m: dict[str, Any] | None) -> float | None
     if name == "out_bytes":
         return sum(c.get("outBytes", 0) for c in cs) / calls if calls else None
     if name == "denials":
-        return sum((c.get("byClass") or {}).get("permission_denied", 0) for c in cs) / len(rows) if rows else None
+        # The same classes Run health counts as denied (health._cmds).
+        denied = sum((c.get("byClass") or {}).get(k, 0) for c in cs for k in ("permission_denied", "blocked"))
+        return denied / len(rows) if rows else None
     return None
 
 
 def _improved(name: str, before: float, after: float) -> bool:
     if name == "verified_share":
-        return after >= before * (1 + MIN_GAIN) or after - before >= MIN_GAIN
-    return after <= before * (1 - MIN_GAIN)
+        # `after >= before * 1.1` alone holds for an unchanged 0%; require a real rise.
+        return after > before and (after >= before * (1 + MIN_GAIN) or after - before >= MIN_GAIN)
+    return after < before and after <= before * (1 - MIN_GAIN)
 
 
 def effects(store: Any) -> list[dict[str, Any]]:
@@ -131,6 +139,13 @@ def effects(store: Any) -> list[dict[str, Any]]:
 
 
 def run(store: Any, *, force: bool = False, today: str | None = None) -> dict[str, Any]:
+    # Held across the daily check, the writes and the final save, so two overlapping
+    # runs (two sessions starting at once) cannot both apply the same fix.
+    with fixes.write_lock(store.base):
+        return _run(store, force, today)
+
+
+def _run(store: Any, force: bool, today: str | None) -> dict[str, Any]:
     base = store.base
     cfg = config(base)
     today = today or datetime.now(UTC).strftime("%Y-%m-%d")
@@ -156,6 +171,8 @@ def run(store: Any, *, force: bool = False, today: str | None = None) -> dict[st
                 entry = fixes.apply(base, fx, md, rel=rel, source="autotune",
                                     baseline=metric(repo_rows, fx.get("metric")))
             except fixes.FixError as exc:
+                if exc.code == "already_present":
+                    continue
                 _log(cfg, "error", title=fx["title"], repo=fx["repo"], detail=exc.message)
                 continue
             _log(cfg, "add", title=fx["title"], repo=fx["repo"], file=rel, entry=entry["id"])
@@ -184,6 +201,11 @@ def run(store: Any, *, force: bool = False, today: str | None = None) -> dict[st
 
 
 def approve(store: Any, fix_id: str) -> dict[str, Any]:
+    with fixes.write_lock(store.base):
+        return _approve(store, fix_id)
+
+
+def _approve(store: Any, fix_id: str) -> dict[str, Any]:
     cfg = config(store.base)
     item = next((p for p in cfg["pending"] if p["fixId"] == fix_id), None)
     if item is None:
@@ -197,6 +219,11 @@ def approve(store: Any, fix_id: str) -> dict[str, Any]:
 
 
 def dismiss(store: Any, fix_id: str, *, forever: bool = False) -> None:
+    with fixes.write_lock(store.base):
+        _dismiss(store, fix_id, forever)
+
+
+def _dismiss(store: Any, fix_id: str, forever: bool) -> None:
     cfg = config(store.base)
     cfg["pending"] = [p for p in cfg["pending"] if p["fixId"] != fix_id]
     if forever and fix_id not in cfg["dismissed"]:
@@ -260,8 +287,8 @@ def uninstall_hook() -> None:
     except (OSError, ValueError):
         return
     groups = (data.get("hooks") or {}).get("SessionStart") or []
-    kept = [g for g in groups if not any(h.get("command") == HOOK_COMMAND for h in g.get("hooks", []))]
-    if len(kept) != len(groups):
+    kept = fixes.drop_hook(groups, HOOK_COMMAND)
+    if kept != groups:
         if kept:
             data["hooks"]["SessionStart"] = kept
         else:

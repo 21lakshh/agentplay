@@ -331,6 +331,18 @@ def _health_fixes(st: Store, days: int = 30) -> list[dict]:
     return health.fixes(autotune.root_rows(st, since=since))
 
 
+def _pick_fix(st: Store, items: list[dict], target: str) -> dict | None:
+    """A fix by its 1-based number in ``items`` or by id (the viewer shows ids, over any window)."""
+    if target.isdigit():
+        n = int(target)
+        return items[n - 1] if 1 <= n <= len(items) else None
+    if not target:
+        return None
+    return next((f for f in items if f["id"] == target), None) or next(
+        (f for f in _health_fixes(st, days=36500) if f["id"] == target), None
+    )
+
+
 def cmd_fix(args: argparse.Namespace) -> int:
     from . import fixes
 
@@ -354,10 +366,9 @@ def cmd_fix(args: argparse.Namespace) -> int:
             return 1
         print(f"Undid: {entry['title']} ({entry['repo']}, {entry['file']}).")
         return 0
-    try:
-        fx = items[int(args.target) - 1]
-    except (ValueError, IndexError):
-        print("agentplay: give the number from `agentplay fix list`.", file=sys.stderr)
+    fx = _pick_fix(st, items, args.target)
+    if fx is None:
+        print("agentplay: give a number from `agentplay fix list`, or a fix id from the viewer.", file=sys.stderr)
         return 1
     if not fx["actions"]:
         print(f"agentplay: {fx['title']}: nothing to write; it names an integration to fix by hand.", file=sys.stderr)
@@ -401,6 +412,8 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                 autotune.set_repo(st.base, repo, enabled=True)
             cfg = autotune.config(st.base)
             if args.at:
+                # One schedule only: a leftover SessionStart hook would run first and the cron run would skip.
+                autotune.uninstall_hook()
                 cfg["when"] = args.at
                 autotune.save(st.base, cfg)
                 print(f"Add this to your crontab (crontab -e) to run daily at {args.at}:")
@@ -426,7 +439,10 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                     for title in res[k]:
                         print(f"{k}: {title}")
         elif args.action == "undo":
-            entry = fixes.undo(st.base, args.repo[0] if args.repo else "")
+            if not args.entry:
+                print("agentplay: give the entry id from `agentplay autotune status`.", file=sys.stderr)
+                return 1
+            entry = fixes.undo(st.base, args.entry)
             print(f"Undid: {entry['title']}.")
         else:
             s = autotune.status(st)
@@ -435,6 +451,8 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                 print(f"{'●' if r.get('enabled') and r['granted'] else '○'} {r['name']}")
             for p in s["pending"]:
                 print(f"waiting: {p['title']} ({p['repo']}) - approve it in the viewer")
+            for e in s["active"]:
+                print(f"active: {e['title']} ({e['repo']}, {e['file']}) - undo with `agentplay autotune undo {e['id']}`")
     except fixes.FixError as exc:
         print(f"agentplay: {exc.message}", file=sys.stderr)
         return 1
@@ -496,7 +514,7 @@ def parser() -> argparse.ArgumentParser:
 
     fx = sub.add_parser("fix", parents=[common], help="list, apply or undo Run health fixes")
     fx.add_argument("action", choices=["list", "apply", "undo"])
-    fx.add_argument("target", nargs="?", default="", help="fix number (apply) or entry id (undo)")
+    fx.add_argument("target", nargs="?", default="", help="fix number or id (apply), or entry id (undo)")
     fx.add_argument("--variant", type=int, default=0, help="which of a fix's actions to apply (default: the first)")
     fx.add_argument("--to", choices=["CLAUDE.md", "CLAUDE.local.md"], help="instruction file to write to")
     fx.set_defaults(fn=cmd_fix)
@@ -509,6 +527,7 @@ def parser() -> argparse.ArgumentParser:
 
     at = sub.add_parser("autotune", parents=[common], help="apply fixes daily and retire the ones that don't help")
     at.add_argument("action", choices=["on", "off", "run", "status", "undo"], nargs="?", default="status")
+    at.add_argument("entry", nargs="?", default="", help="entry id to undo (from `autotune status`)")
     at.add_argument("--repo", action="append", help="repo name (repeatable; default: every granted repo)")
     at.add_argument("--at", help="run daily at HH:MM from cron instead of on session start")
     at.add_argument("--daily", action="store_true", help="skip if it already ran today")

@@ -42,6 +42,15 @@ export function AutotuneView() {
   );
 }
 
+function WriteError({ write }: { write: ReturnType<typeof useWrite> }) {
+  if (!write.isError) return null;
+  return (
+    <p role="alert" className="rounded-md bg-ds-danger-subtlest px-3 py-2 ds-text-body-xs-medium text-ds-danger-darkest">
+      {(write.error as Error).message}
+    </p>
+  );
+}
+
 function Summary({ s }: { s: AutotuneStatus }) {
   const on = s.repos.filter((r) => r.enabled && r.granted);
   const write = useWrite();
@@ -66,6 +75,11 @@ function Summary({ s }: { s: AutotuneStatus }) {
       >
         Run now
       </Button>
+      {write.isError ? (
+        <div className="basis-full">
+          <WriteError write={write} />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -73,7 +87,8 @@ function Summary({ s }: { s: AutotuneStatus }) {
 function Repos({ s }: { s: AutotuneStatus }) {
   const write = useWrite();
   return (
-    <Panel title="Repos it can write to" question="Found in your sessions. It writes nowhere else.">
+    <Panel title="Repository Access" question="Repositories found in your sessions. Autotune writes nowhere else.">
+      <WriteError write={write} />
       {s.repos.length ? (
         <ul className="flex flex-col gap-2">
           {s.repos.map((r) => (
@@ -136,7 +151,7 @@ function Repos({ s }: { s: AutotuneStatus }) {
 
 function Schedule({ s }: { s: AutotuneStatus }) {
   return (
-    <Panel title="When it runs" question="No background service needed.">
+    <Panel title="Run Schedule">
       <p className="ds-text-body-xs-medium text-ds-text-default">
         {s.hookInstalled
           ? 'At the first Claude Code session each day, from a SessionStart hook in your user settings.'
@@ -159,10 +174,11 @@ function Waiting({ s }: { s: AutotuneStatus }) {
   const write = useWrite();
   return (
     <Panel
-      title="Waiting for you"
+      title="Pending Approval"
       question="Changes that grant access or run code. Autotune never makes these on its own."
       action={s.pending.length ? <Badge variant="warning">{s.pending.length} waiting</Badge> : null}
     >
+      <WriteError write={write} />
       {s.pending.length ? (
         <ul className="flex flex-col gap-2">
           {s.pending.map((p) => (
@@ -211,7 +227,8 @@ function Log({ s }: { s: AutotuneStatus }) {
   const write = useWrite();
   const active = new Map(s.active.map((e) => [e.id, e]));
   return (
-    <Panel title="What Autotune changed" question="Each change is measured on its own metric. No effect after 15 sessions means it is removed.">
+    <Panel title="Change History" question="Each change is measured on its own metric. A change with no effect after 15 sessions is removed.">
+      <WriteError write={write} />
       {s.log.length ? (
         <ol className="flex flex-col">
           {s.log.map((l, i) => {
@@ -228,7 +245,7 @@ function Log({ s }: { s: AutotuneStatus }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap justify-between gap-2">
                     <span className="ds-text-body-xs-semibold text-ds-text-darker">
-                      {{ add: 'Added', approve: 'You approved', queue: 'Waiting for you', retire: 'Retired', error: 'Could not write' }[l.kind] ?? l.kind}: {l.title}
+                      {{ add: 'Added', approve: 'You approved', queue: 'Pending approval', retire: 'Retired', error: 'Could not write' }[l.kind] ?? l.kind}: {l.title}
                     </span>
                     <span className="ds-text-body-xs-medium text-ds-text-subtle">{l.at ? new Date(l.at).toLocaleDateString() : ''}</span>
                   </div>

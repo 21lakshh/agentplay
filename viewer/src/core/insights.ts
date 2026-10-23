@@ -53,10 +53,18 @@ export const sessionFactsSchema = z.object({
 });
 export type SessionFacts = z.infer<typeof sessionFactsSchema>;
 
+const isoDay = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}/)
+  .refine((v) => !Number.isNaN(Date.parse(`${v.slice(0, 10)}T00:00:00Z`)))
+  .nullable()
+  .catch(null);
+
 export const insightsSessionSchema = z.object({
   sessionId: z.string(),
-  sessionDate: z.string().nullable().catch(null),
-  startedAt: z.string().nullable().catch(null),
+  // An imported map can carry any string here; a date that doesn't parse is treated as missing.
+  sessionDate: isoDay,
+  startedAt: isoDay,
   agentTool: z.string().catch('unknown'),
   models: z.array(z.string()).catch([]),
   repos: z.array(z.string()).catch([]),
@@ -173,9 +181,10 @@ export const OUTCOME_ORDER: SessionOutcome[] = [
   'incomplete',
 ];
 
-/** Monday (UTC) of the week holding `iso`, as `YYYY-MM-DD`. */
+/** Monday (UTC) of the week holding `iso`, as `YYYY-MM-DD` (empty when `iso` is not a date). */
 export function weekStart(iso: string): string {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
   const dow = (d.getUTCDay() + 6) % 7;
   d.setUTCDate(d.getUTCDate() - dow);
   return d.toISOString().slice(0, 10);
@@ -194,6 +203,7 @@ export function outcomesByWeek(rows: InsightsSession[]): OutcomeWeek[] {
     const day = r.sessionDate ?? r.startedAt;
     if (!day) continue;
     const w = weekStart(day);
+    if (!w) continue;
     byWeek.set(w, [...(byWeek.get(w) ?? []), r]);
   }
   return [...byWeek.entries()]
@@ -259,12 +269,15 @@ export function spendByDay(
   return { days, series: [...series.entries()].map(([key, total]) => ({ key, total })) };
 }
 
-/** Every UTC day from `first` through `last`, so a chart shows quiet days as gaps. */
+/**
+ * Every UTC day from `first` through `last`, so a chart shows quiet days as gaps.
+ * Uncapped on purpose: callers bucket every day `spendByDay` returns, so the range must cover them all.
+ */
 export function dayRange(first: string, last: string): string[] {
   const out: string[] = [];
   const d = new Date(`${first}T00:00:00Z`);
   const end = new Date(`${last}T00:00:00Z`);
-  while (d <= end && out.length < 400) {
+  while (d <= end) {
     out.push(d.toISOString().slice(0, 10));
     d.setUTCDate(d.getUTCDate() + 1);
   }

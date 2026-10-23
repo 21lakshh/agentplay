@@ -253,11 +253,10 @@ function PointsOnTheTable({ h, range }: { h: HealthReport; range: Range }) {
             Up to +{gain.toFixed(1)} points if every open fix works. Overlapping fixes are not double counted in the score itself.
           </p>
           <ol className="flex flex-col gap-2">
-            {fixes.map((f, n) => (
+            {fixes.map((f) => (
               <FixCard
                 key={f.id}
                 fix={f}
-                n={h.fixes.indexOf(f) + 1 || n + 1}
                 applied={applied.get(f.id)}
                 repo={repos.get(f.repo)}
                 range={range}
@@ -282,14 +281,12 @@ function PointsOnTheTable({ h, range }: { h: HealthReport; range: Range }) {
 
 function FixCard({
   fix,
-  n,
   applied,
   repo,
   range,
   titles,
 }: {
   fix: Fix;
-  n: number;
   applied?: { id: string; file: string };
   repo?: { name: string; root: string | null; granted: boolean };
   range: Range;
@@ -377,7 +374,7 @@ function FixCard({
                   {preview ? 'Hide change' : 'Preview change'}
                 </Button>
                 <span className="ds-text-body-xs-medium text-ds-text-subtle">
-                  or run <code className="rounded bg-ds-gray-subtlest px-1.5 py-0.5 font-mono text-ds-text-darker">agentplay fix apply {n}</code>
+                  or run <code className="rounded bg-ds-gray-subtlest px-1.5 py-0.5 font-mono text-ds-text-darker">agentplay fix apply {fix.id}</code>
                 </span>
               </>
             ) : repo?.root ? (

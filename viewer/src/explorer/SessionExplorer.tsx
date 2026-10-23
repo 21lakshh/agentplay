@@ -293,7 +293,8 @@ export function SessionExplorer({
       // Picking a session shows its map and Details; the list stays, so
       // the next one is one click away rather than one back-out away.
       onSelect={(id) => {
-        if (id !== selectedId) void setScopeParams(CLEAR_SCOPE_PARAMS);
+        // Always clear: a task, model or subagent scope may not contain the hit's event.
+        void setScopeParams(CLEAR_SCOPE_PARAMS);
         void data.setSelected(id);
       }}
       // Open descends into it, on every task: any task/model narrowing from
@@ -310,7 +311,8 @@ export function SessionExplorer({
       onLoadMore={() => void list.fetchNextPage()}
       unavailable={data.mapQuery.unavailable}
       onJump={(id, seq) => {
-        if (id !== selectedId) void setScopeParams(CLEAR_SCOPE_PARAMS);
+        // Always clear: a task, model or subagent scope may not contain the hit's event.
+        void setScopeParams(CLEAR_SCOPE_PARAMS);
         void data.setSelected(id);
         void setJumpAt(seq);
       }}

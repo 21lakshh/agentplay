@@ -306,3 +306,87 @@ def test_command_label_only_names_vcs_actions_on_git_and_gh():
 
     assert command_label({"verb": "git", "vcs": {"action": "push"}}) == "git push"
     assert command_label({"verb": "pnpm test", "vcs": {"action": "status"}}) == "pnpm test"
+
+
+def test_undo_never_removes_what_was_there_before(repo):
+    base, root = repo
+    fixes.grant(base, "acme/api")
+    (root / ".claude").mkdir()
+    allow = {"kind": "settings_allow", "file": ".claude/settings.local.json", "entry": "Bash(ls:*)"}
+    (root / ".claude/settings.local.json").write_text('{"permissions": {"allow": ["Bash(ls:*)"]}}')
+    with pytest.raises(fixes.FixError) as exc:
+        fixes.apply(base, FIX, allow)
+    assert exc.value.code == "already_present" and not fixes.active(base)
+    # A Stop group holding someone else's hook keeps it when ours is undone.
+    (root / ".claude/settings.json").write_text(
+        '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "lint"}]}]}}'
+    )
+    hook = {"kind": "stop_hook", "file": ".claude/settings.json", "command": "pytest"}
+    entry = fixes.apply(base, FIX, hook)
+    data = json.loads((root / ".claude/settings.json").read_text())
+    data["hooks"]["Stop"][0]["hooks"].append({"type": "command", "command": "pytest"})
+    (root / ".claude/settings.json").write_text(json.dumps(data))
+    fixes.undo(base, entry["id"])
+    stop = json.loads((root / ".claude/settings.json").read_text())["hooks"]["Stop"]
+    assert [h["command"] for g in stop for h in g["hooks"]] == ["lint"]
+
+
+def test_applying_twice_is_refused_and_a_failed_journal_rolls_back(repo, monkeypatch):
+    base, root = repo
+    fixes.grant(base, "acme/api")
+    fixes.apply(base, FIX, MD)
+    with pytest.raises(fixes.FixError) as exc:
+        fixes.apply(base, FIX, MD)
+    assert exc.value.code == "already_applied"
+
+    def boom(*_a: Any) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fixes, "_save_journal", boom)
+    with pytest.raises(OSError):
+        fixes.apply(base, {**FIX, "id": "other"}, {**MD, "file": "CLAUDE.local.md"}, rel="CLAUDE.local.md")
+    assert not (root / "CLAUDE.local.md").exists()
+
+
+def test_write_lock_is_reentrant(tmp_path):
+    with fixes.write_lock(tmp_path), fixes.write_lock(tmp_path):
+        pass
+
+
+def test_retirement_needs_a_real_gain_and_counts_blocked_denials():
+    assert not autotune._improved("verified_share", 0.0, 0.0)
+    assert autotune._improved("verified_share", 0.0, 0.5)
+    assert not autotune._improved("fail_rate", 0.0, 0.0)
+    rows = [{"facts": {"cmd": {"pnpm": {"calls": 2, "byClass": {"blocked": 1, "permission_denied": 1}}}}}]
+    assert autotune.metric(rows, {"name": "denials", "verb": "pnpm"}) == 2
+
+
+def test_cache_miss_requests_are_charged_once():
+    evs = [
+        {"seq": 1, "kind": "llm", "agent": "main", "cost": 1.0, "in": 1000, "model": "claude-sonnet-4"},
+        {"seq": 2, "kind": "read", "agent": "main", "targets": [{"file": 1, "touch": "read"}]},
+        {"seq": 3, "kind": "read", "agent": "main", "targets": [{"file": 1, "touch": "read"}]},
+        {"seq": 4, "kind": "llm", "agent": "main", "cost": 1.0, "in": 1_000_000, "model": "claude-sonnet-4"},
+    ]
+    waste = facts._waste({"agents": []}, evs, "completed")
+    # Request 4 is a re-read's: its full cost goes there, and its cache-miss estimate leaves cacheMiss.
+    assert waste["reread"] == 1.0 and waste["cacheMiss"] == 0
+
+
+def test_subagent_errors_count_as_dead_lanes():
+    assert "subagent_error" in facts._DEAD_LANE
+
+
+def test_resolver_roots_keep_the_latest_checkout(tmp_path):
+    from agentplay.builder import RepoResolver
+
+    a, b = tmp_path / "a" / "api", tmp_path / "b" / "api"
+    for d in (a, b):
+        d.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", str(d)], check=True)
+    r = RepoResolver()
+    r.resolve(str(a))
+    r.resolve(str(b))
+    r.resolve(str(a))
+    name = next(iter(r.roots()))
+    assert r.roots()[name] == str(a)

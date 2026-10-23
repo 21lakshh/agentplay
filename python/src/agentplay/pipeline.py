@@ -207,6 +207,10 @@ def build_all(
     # Shared across builds, so each checkout is resolved once and its root can
     # be recorded (locally, in repos.json) for writing fixes later.
     resolver = builder.RepoResolver()
+    # Repos a stored map names but whose checkout was never recorded (maps built before
+    # roots were): each is re-resolved once per run from one of its sessions.
+    known_roots = fixes.known_roots(store.base)
+    tried: set[str] = set()
     for i, c in enumerate(cands):
         if pending and time.monotonic() - last_save >= SAVE_EVERY_S:
             store.save_index()
@@ -218,6 +222,14 @@ def build_all(
             report.by_agent[c.agent] += 1
             if _sync_titles(store, c, source, titles=titles) | _sync_facts(store, c.session_id):
                 pending = True
+            need = {n for n in (store.index.get(c.session_id) or {}).get("repos") or []} - set(known_roots) - tried
+            if need:
+                tried |= need
+                try:
+                    discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__,
+                                       resolver=resolver)
+                except Exception:  # noqa: BLE001 - only for its roots; the stored map stays as it is
+                    logger.debug("root lookup failed for %s", c.session_id, exc_info=True)
             continue
         try:
             doc = discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__,

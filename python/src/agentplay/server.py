@@ -209,7 +209,6 @@ class _Handler(BaseHTTPRequestHandler):
     # can tell "no sessions yet" from "no sessions".
     scanning: threading.Event | None = None
     lock = threading.Lock()
-    write_lock = threading.Lock()
     # Facts for rows written before facts existed (or by an older FACTS_VERSION),
     # computed from the stored map on first read. Kept in memory, keyed by the
     # map's content hash: the server never writes the index, which a background
@@ -387,8 +386,9 @@ class _Handler(BaseHTTPRequestHandler):
         action = body.get("action") if isinstance(body, dict) else None
         if url.path != "/api/account":
             try:
-                # Its own lock: a write reads the index through `self.lock` itself.
-                with self.write_lock:
+                # Shared with the CLI and the SessionStart hook (a file lock, not `self.lock`:
+                # a write reads the index through `self.lock` itself).
+                with fixes.write_lock(self.store.base):
                     return self._write(url.path, str(action or ""), body)
             except fixes.FixError as exc:
                 return self._error(409, exc.code, exc.message)

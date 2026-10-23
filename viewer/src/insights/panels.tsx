@@ -227,7 +227,9 @@ export function SpendPanel({ rows }: { rows: InsightsSession[] }) {
   const buckets = new Map<string, Record<string, number>>();
   for (const d of range) buckets.set(weekly ? weekStart(d) : d, buckets.get(weekly ? weekStart(d) : d) ?? {});
   for (const d of days) {
-    const b = buckets.get(weekly ? weekStart(d.day) : d.day)!;
+    const key = weekly ? weekStart(d.day) : d.day;
+    const b = buckets.get(key) ?? {};
+    buckets.set(key, b);
     for (const [k, v] of Object.entries(d.parts)) b[k] = (b[k] ?? 0) + v;
   }
   const bars = [...buckets.entries()].map(([key, parts]) => ({

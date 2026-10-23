@@ -24,7 +24,7 @@ FACTS_VERSION = 3
 # out on purpose: stopping an agent is often the right call.
 _ABANDONED = frozenset({"unresolved_errors", "incomplete"})
 # How a subagent lane can end without giving its parent anything back.
-_DEAD_LANE = frozenset({"no_result", "subagent_failed", "subagent_killed"})
+_DEAD_LANE = frozenset({"no_result", "subagent_failed", "subagent_error", "subagent_killed"})
 # Event kinds that run a shell command, keyed by verb in `cmd`.
 _COMMAND_KINDS = frozenset({"exec", "verify"})
 
@@ -56,11 +56,19 @@ def _waste(doc: dict[str, Any], evs: list[dict[str, Any]], outcome: str) -> dict
                 return x
         return None
 
+    # Cache-miss estimates are only part of a request's cost, so a later bucket can still take
+    # the whole request; when it does, the estimate moves out of cacheMiss rather than counting twice.
+    misses: dict[int, float] = {}
+
+    def take(x: dict[str, Any], bucket: str) -> None:
+        charged.add(x["seq"])
+        out["cacheMiss"] -= misses.pop(x["seq"], 0.0)
+        out[bucket] += float(x.get("cost") or 0.0)
+
     def charge(bucket: str, e: dict[str, Any]) -> None:
         x = next_llm(e)
         if x is not None:
-            charged.add(x["seq"])
-            out[bucket] += float(x.get("cost") or 0.0)
+            take(x, bucket)
 
     for e in evs:
         if e["kind"] in _NON_CALL_KINDS:
@@ -80,7 +88,10 @@ def _waste(doc: dict[str, Any], evs: list[dict[str, Any]], outcome: str) -> dict
         seen_agent.add(x["agent"])
         if first or x["seq"] in charged:
             continue
-        out["cacheMiss"] += _cache_miss_usd(x.get("model"), int(x.get("in") or 0))
+        miss = _cache_miss_usd(x.get("model"), int(x.get("in") or 0))
+        if miss > 0:
+            misses[x["seq"]] = miss
+            out["cacheMiss"] += miss
 
     # A re-read: a file read again with no edit to it since the last read.
     last_read: dict[int, int] = {}
@@ -101,10 +112,10 @@ def _waste(doc: dict[str, Any], evs: list[dict[str, Any]], outcome: str) -> dict
         launch = launches.get(a.get("launchSeq"))
         dead = a.get("outcome") in _DEAD_LANE or (launch is not None and launch.get("errClass") in _DEAD_LANE)
         if a.get("kind") == "subagent" and dead:
-            lane = [x for x in llm if x["agent"] == a.get("id") and x["seq"] not in charged]
-            out["deadSubagent"] += sum(float(x.get("cost") or 0.0) for x in lane)
+            for x in [x for x in llm if x["agent"] == a.get("id") and x["seq"] not in charged]:
+                take(x, "deadSubagent")
 
-    return {k: round(v, 6) for k, v in out.items()}
+    return {k: round(max(v, 0.0), 6) for k, v in out.items()}
 
 
 def _rereads_after_compaction(evs: list[dict[str, Any]]) -> int:
@@ -170,7 +181,9 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
         if not (hits or reads or edits) or not f.get("path"):
             continue
         key = f"{repo_names.get(f.get('repo'), '')}:{f['path']}"
-        files[key] = {"hits": hits, "reads": reads, "edits": edits}
+        # Two repos can share a display name; add their counters rather than drop one.
+        prev = files.get(key) or {"hits": 0, "reads": 0, "edits": 0}
+        files[key] = {"hits": prev["hits"] + hits, "reads": prev["reads"] + reads, "edits": prev["edits"] + edits}
 
     edits = [e for e in evs if e["kind"] == "edit"]
     verifies = [e for e in evs if e["kind"] == "verify" and not e.get("err")]

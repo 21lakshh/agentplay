@@ -22,8 +22,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +45,49 @@ class FixError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+# ------------------------------------------------------------------ locking
+
+_held = threading.local()
+
+
+@contextmanager
+def write_lock(base: Path) -> Iterator[None]:
+    """Serialize writers (server threads, the CLI and the SessionStart hook) on ``base/write.lock``.
+
+    Re-entrant within a thread, so ``autotune.run`` can hold it across the
+    ``apply`` calls it makes.
+    """
+    depth = getattr(_held, "depth", 0)
+    if depth:
+        _held.depth = depth + 1
+        try:
+            yield
+        finally:
+            _held.depth -= 1
+        return
+    base.mkdir(parents=True, exist_ok=True)
+    with open(base / "write.lock", "a+b") as fh:
+        _lock_file(fh, True)
+        _held.depth = 1
+        try:
+            yield
+        finally:
+            _held.depth = 0
+            _lock_file(fh, False)
+
+
+def _lock_file(fh: Any, on: bool) -> None:
+    try:
+        import fcntl
+    except ImportError:  # Windows
+        import msvcrt
+
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK if on else msvcrt.LK_UNLCK, 1)
+        return
+    fcntl.flock(fh.fileno(), fcntl.LOCK_EX if on else fcntl.LOCK_UN)
 
 
 # ------------------------------------------------------------------ local files
@@ -87,16 +133,18 @@ def grant(base: Path, repo: str, root: str | None = None) -> str:
     resolved = Path(path).expanduser().resolve()
     if not (resolved / ".git").exists():
         raise FixError("not_a_repo", f"{resolved} is not a git checkout.")
-    g = grants(base)
-    g[repo] = str(resolved)
-    _write_json(base / "grants.json", g)
+    with write_lock(base):
+        g = grants(base)
+        g[repo] = str(resolved)
+        _write_json(base / "grants.json", g)
     return str(resolved)
 
 
 def revoke(base: Path, repo: str) -> None:
-    g = grants(base)
-    if g.pop(repo, None) is not None:
-        _write_json(base / "grants.json", g)
+    with write_lock(base):
+        g = grants(base)
+        if g.pop(repo, None) is not None:
+            _write_json(base / "grants.json", g)
 
 
 def journal(base: Path) -> list[dict[str, Any]]:
@@ -200,6 +248,21 @@ def _apply_text(action: dict[str, Any], text: str | None, fix_id: str, rel: str)
     return json.dumps(data, indent=2) + "\n"
 
 
+def drop_hook(groups: list[Any], command: Any) -> list[Any]:
+    """``groups`` without the hook that runs ``command``; other hooks in a group stay, empty groups go."""
+    out = []
+    for g in groups:
+        if not isinstance(g, dict):
+            out.append(g)
+            continue
+        hooks = [h for h in g.get("hooks", []) if not (isinstance(h, dict) and h.get("command") == command)]
+        if len(hooks) == len(g.get("hooks", [])):
+            out.append(g)
+        elif hooks:
+            out.append({**g, "hooks": hooks})
+    return out
+
+
 def _undo_text(entry: dict[str, Any], text: str) -> str:
     kind = entry["action"].get("kind")
     if kind == "claude_md":
@@ -210,12 +273,11 @@ def _undo_text(entry: dict[str, Any], text: str) -> str:
         if entry["action"].get("entry") in allow:
             allow.remove(entry["action"]["entry"])
     elif kind == "stop_hook":
-        stop = (data.get("hooks") or {}).get("Stop") or []
-        data["hooks"]["Stop"] = [
-            g for g in stop if not any(h.get("command") == entry["action"].get("command") for h in g.get("hooks", []))
-        ]
-        if not data["hooks"]["Stop"]:
-            del data["hooks"]["Stop"]
+        stop = (data.get("hooks") or {}).get("Stop")
+        if stop:
+            data["hooks"]["Stop"] = drop_hook(stop, entry["action"].get("command"))
+            if not data["hooks"]["Stop"]:
+                del data["hooks"]["Stop"]
     return json.dumps(data, indent=2) + "\n"
 
 
@@ -246,11 +308,26 @@ def apply(
         raise FixError("file_not_allowed", "Instructions go in CLAUDE.md or CLAUDE.local.md.")
     if action.get("kind") in ("settings_allow", "stop_hook") and not rel.startswith(".claude/"):
         raise FixError("file_not_allowed", "Settings go in .claude/settings.json or .claude/settings.local.json.")
+    with write_lock(base):
+        return _apply_locked(base, fix, action, repo, rel, expect_hash, source, baseline)
+
+
+def _apply_locked(
+    base: Path, fix: dict[str, Any], action: dict[str, Any], repo: str, rel: str,
+    expect_hash: str | None, source: str, baseline: Any,
+) -> dict[str, Any]:
+    entries = journal(base)
+    if any(e.get("fixId") == fix["id"] and e.get("repo") == repo and e.get("file") == rel
+           and not e.get("undoneAt") for e in entries):
+        raise FixError("already_applied", f"This fix is already in {rel}. Undo it first to write it again.")
     target = _target(base, repo, rel)
     before = target.read_text(encoding="utf-8") if target.exists() else None
     if expect_hash is not None and expect_hash != file_hash(before):
         raise FixError("changed", f"{rel} changed since the preview. Look again before applying.")
     after = _apply_text(action, before, fix["id"], rel)
+    if after == before or (action.get("kind") != "claude_md" and _settings(before, rel) == _settings(after, rel)):
+        # Already there (the person added it themselves): nothing to write, so nothing to undo later.
+        raise FixError("already_present", f"{rel} already has this.")
     target.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write(target, after.encode("utf-8"))
     entry = {
@@ -266,13 +343,25 @@ def apply(
         "baseline": baseline,
         "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    entries = journal(base)
     entries.append(entry)
-    _save_journal(base, entries)
+    try:
+        _save_journal(base, entries)
+    except BaseException:
+        # Never leave a repo change that cannot be undone.
+        if before is None:
+            target.unlink(missing_ok=True)
+        else:
+            _atomic_write(target, before.encode("utf-8"))
+        raise
     return entry
 
 
 def undo(base: Path, entry_id: str, *, reason: str = "undone") -> dict[str, Any]:
+    with write_lock(base):
+        return _undo_locked(base, entry_id, reason)
+
+
+def _undo_locked(base: Path, entry_id: str, reason: str) -> dict[str, Any]:
     entries = journal(base)
     entry = next((e for e in entries if e.get("id") == entry_id and not e.get("undoneAt")), None)
     if entry is None:
