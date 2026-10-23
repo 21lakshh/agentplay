@@ -1130,18 +1130,49 @@ def _gemini_header(head: bytes) -> dict | None:
     return None
 
 
-def _gemini_has_messages(head: bytes) -> bool:
-    """True when the head holds a `user` or `gemini` message, not only the header.
+# Injected as the first user message of every Gemini CLI session. Not a prompt.
+# The same prefix `parsers.gemini._user_prompt` ignores.
+_GEMINI_SESSION_CONTEXT_PREFIX = "<session_context>"
 
-    A session that was opened and closed without a prompt is just the header
-    line; it has nothing to map, same as `_kiro_event_count == 0`.
+
+def _gemini_user_counts(content: object) -> bool:
+    """True unless every text part is the CLI's synthetic `<session_context>`.
+
+    A tool-result `user` record has no text parts and still counts. A record
+    that is only the context block does not: the parser opens no turn for it.
+    """
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, list):
+        texts = [
+            part["text"]
+            for part in content
+            if isinstance(part, dict) and isinstance(part.get("text"), str)
+        ]
+    else:
+        return True
+    if not texts:
+        return True
+    return any(not text.lstrip().startswith(_GEMINI_SESSION_CONTEXT_PREFIX) for text in texts)
+
+
+def _gemini_has_messages(head: bytes) -> bool:
+    """True when the head holds a real prompt or a `gemini` message.
+
+    A session opened and closed without a prompt is the header plus the CLI's
+    `<session_context>` user record. That record is not a turn, so the file
+    has nothing to map and is an `empty_events` skip, same as a header-only
+    file and `_kiro_event_count == 0`.
     """
     for line in head.split(b"\n"):
         try:
             obj = json.loads(line)
         except ValueError:
             continue
-        if isinstance(obj, dict) and obj.get("type") in ("user", "gemini"):
+        if not isinstance(obj, dict):
+            continue
+        kind = obj.get("type")
+        if kind == "gemini" or (kind == "user" and _gemini_user_counts(obj.get("content"))):
             return True
     return False
 

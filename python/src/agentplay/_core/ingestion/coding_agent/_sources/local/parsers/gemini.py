@@ -80,6 +80,14 @@ _SESSION_CONTEXT_PREFIX = "<session_context>"
 
 _SHELL_TOOL = "run_shell_command"
 
+# Path arguments, `file_path` first. `input.value` keeps 2,000 characters, and
+# Gemini records `content` ahead of `file_path` on `write_file`, so a large
+# write used to lose the path. `dir_path` is the directory argument on
+# list/search/shell. The rest are keys edit evidence and the CLI's own path
+# helper already accept. Hoisting them does not change the argument values
+# `extract_edit_evidence` reads.
+_PATH_KEYS = ("file_path", "dir_path", "path", "absolute_path", "filePath")
+
 # The labels the CLI may append after `Output: ...`, last first. The result is
 # read from its last line upward, each label at most once and only in this
 # order, so a label line inside the program's output ends the scan.
@@ -330,7 +338,7 @@ def _tool_span(trace_id: str, turn: dict, msg: dict, call: dict, index: int) -> 
     tool_name = _TOOL_ALIASES.get(raw_name, raw_name)
 
     args = call.get("args")
-    input_value = json.dumps(args) if isinstance(args, dict) else "{}"
+    input_value = json.dumps(_path_keys_first(args)) if isinstance(args, dict) else "{}"
     response = _response(call)
     output_value = _output_text(response)
 
@@ -371,6 +379,13 @@ def _tool_span(trace_id: str, turn: dict, msg: dict, call: dict, index: int) -> 
     )
     span.attributes.update(source_attrs(msg))
     return span
+
+
+def _path_keys_first(args: dict) -> dict:
+    """A copy of `args` with path keys emitted before everything else."""
+    first = {key: args[key] for key in _PATH_KEYS if key in args}
+    rest = {key: value for key, value in args.items() if key not in first}
+    return {**first, **rest}
 
 
 def _response(call: dict) -> dict:

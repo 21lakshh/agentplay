@@ -20,12 +20,14 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, discover
+from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
     parse_gemini,
 )
 from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+from agentplay._core.ingestion.coding_agent.file_paths import extract_file_path
 
 FIXTURES = Path(__file__).parent / "fixtures" / "gemini"
 FIXTURE_ROOT = "/Users/dev/project"
@@ -118,6 +120,43 @@ def test_write_records_edit_evidence():
     assert write.attributes["code.edit_evidence"]["status"] != "not_successful"
 
 
+def test_path_keys_survive_truncation_and_edit_evidence_keeps_the_full_write():
+    # Gemini records `content` before `file_path`. A write larger than the
+    # 2,000-character input cap used to shear the path off the retained prefix.
+    content = "kept-line\n" + ("x" * 4000)
+    file_path = f"{FIXTURE_ROOT}/file_1.js"
+    dir_path = FIXTURE_ROOT
+    args = {
+        "content": content,
+        "instruction": "y" * 500,
+        "dir_path": dir_path,
+        "file_path": file_path,
+    }
+    prompt = {"id": "u1", "timestamp": "2026-10-23T07:00:00Z", "type": "user", "content": [{"text": "go"}]}
+    reply = {
+        "id": "g1",
+        "timestamp": "2026-10-23T07:00:01Z",
+        "type": "gemini",
+        "toolCalls": [
+            {
+                "id": "c-write",
+                "name": "write_file",
+                "args": args,
+                "result": [{"functionResponse": {"id": "x", "name": "write_file", "response": {"output": "ok"}}}],
+                "status": "success",
+                "timestamp": "2026-10-23T07:00:02Z",
+            }
+        ],
+    }
+    (tool,) = _tools(parse_gemini(_session(prompt, reply), "t")[1])
+    recorded = tool.attributes["input.value"]
+    assert len(recorded) <= 2000
+    assert recorded.startswith('{"file_path":')
+    assert extract_file_path(recorded) == file_path
+    assert f'"dir_path": {json.dumps(dir_path)}' in recorded
+    assert tool.attributes["code.edit_evidence"] == extract_edit_evidence("Write", args, successful=True)
+
+
 @pytest.mark.parametrize("name", ["read_explain", "edit_and_run", "failed_shell"])
 def test_tokens_are_counted_once_per_request(name):
     turn = _turns(_parse(name))[0].attributes
@@ -140,8 +179,13 @@ def test_model_and_session_id():
     assert _parse("read_explain")[0].attributes["llm.model_name"] == "gemini-3-flash-preview"
 
 
-def _session(*records: dict) -> bytes:
-    header = {"sessionId": "s1", "projectHash": "h", "startTime": "2026-10-23T07:00:00Z", "kind": "main"}
+def _session(*records: dict, session_id: str = "s1") -> bytes:
+    header = {
+        "sessionId": session_id,
+        "projectHash": "h",
+        "startTime": "2026-10-23T07:00:00Z",
+        "kind": "main",
+    }
     return b"".join(json.dumps(r).encode() + b"\n" for r in (header, *records))
 
 
@@ -339,6 +383,52 @@ def _gemini_home(tmp_path: Path, root: str = FIXTURE_ROOT) -> Path:
     (project / "chats" / "session-2026-10-23T07-01-empty.jsonl").write_bytes(_session())
     (project / "logs.json").write_text("[]", encoding="utf-8")
     return home
+
+
+def _context_user(msg_id: str, *texts: str) -> dict:
+    return {
+        "id": msg_id,
+        "timestamp": "2026-10-23T07:02:00Z",
+        "type": "user",
+        "content": [{"text": text} for text in texts],
+    }
+
+
+def test_context_only_session_is_skipped_as_empty_events(tmp_path):
+    home = _gemini_home(tmp_path)
+    chats = home / "tmp" / "project" / "chats"
+    context = "<session_context>\nCONTEXT-PLACEHOLDER\n</session_context>"
+    (chats / "session-context-only.jsonl").write_bytes(
+        _session(_context_user("u0", context), session_id="context-only")
+    )
+    # A context block plus a real prompt is a session. So is model output
+    # that arrived with no prompt of its own.
+    (chats / "session-context-plus-prompt.jsonl").write_bytes(
+        _session(
+            _context_user("u1", context, "PROMPT-PLACEHOLDER-1"),
+            session_id="context-plus-prompt",
+        )
+    )
+    (chats / "session-context-and-model.jsonl").write_bytes(
+        _session(
+            _context_user("u2", context),
+            {
+                "id": "g1",
+                "timestamp": "2026-10-23T07:03:01Z",
+                "type": "gemini",
+                "content": "MODEL-TEXT-PLACEHOLDER",
+                "model": "gemini-3-flash-preview",
+            },
+            session_id="context-and-model",
+        )
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[home])
+    index = source._build_index()
+    assert "local:gemini-cli:context-only" not in index
+    assert "local:gemini-cli:context-plus-prompt" in index
+    assert "local:gemini-cli:context-and-model" in index
+    # Header-only file from `_gemini_home`, plus the context-only session.
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
 
 
 def test_local_source_indexes_gemini_sessions(tmp_path):
