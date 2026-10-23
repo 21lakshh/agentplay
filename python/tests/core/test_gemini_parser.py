@@ -196,6 +196,47 @@ def test_exit_code_printed_by_the_program_is_not_the_verdict():
     assert tool.status_code == "OK"
 
 
+def _shell_status(output: str) -> str:
+    prompt = {"id": "u1", "timestamp": "2026-10-23T07:00:00Z", "type": "user", "content": [{"text": "go"}]}
+    reply = {
+        "id": "g1",
+        "timestamp": "2026-10-23T07:00:01Z",
+        "type": "gemini",
+        "toolCalls": [_call("run_shell_command", "success", {"output": output}, command="cat log")],
+    }
+    (tool,) = _tools(parse_gemini(_session(prompt, reply), "t")[1])
+    return tool.status_code
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        # The program prints a standalone label line, the command succeeds, and
+        # the CLI appends no failure label of its own.
+        "Output: Exit Code: 3\nExit Code: 3\ndone\nProcess Group PGID: 1",
+        "Output: start\nSignal: SIGTERM\ndone\nProcess Group PGID: 1",
+        "Output: Exit Code: 3\nSignal: SIGTERM\ndone",
+        # The label sits before the CLI's own `Error:` line, so it is output.
+        "Output: Exit Code: 3\nError: spawn failed\nProcess Group PGID: 1",
+    ],
+)
+def test_label_lines_in_program_output_are_not_the_verdict(output):
+    assert _shell_status(output) == "OK"
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "Output: x\nExit Code: 1\nProcess Group PGID: 1",
+        "Output: x\nError: boom\nExit Code: 127",
+        "Output: (empty)\nSignal: SIGTERM\nBackground PIDs: 7, 8\nProcess Group PGID: 1",
+        "Output: Exit Code: 0\nExit Code: 2\nSignal: 15\nProcess Group PGID: 1",
+    ],
+)
+def test_the_clis_trailing_verdict_marks_failure(output):
+    assert _shell_status(output) == "ERROR"
+
+
 @pytest.mark.parametrize(
     "data",
     [

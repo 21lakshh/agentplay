@@ -36,7 +36,11 @@ A tool call records `status` (`success` | `error` | `cancelled`). The shell
 tool reports `success` even when the command fails, and appends an
 `Exit Code: <n>` line to its output only when n is non-zero (and a `Signal:`
 line only when a signal ended the process). Those lines are the failure
-signal for shell calls.
+signal for shell calls. The CLI writes `Output: <program output>` first, then
+its labels in a fixed order: `Error:`, `Exit Code:`, `Signal:`,
+`Background PIDs:`, `Process Group PGID:`. Only that trailing block is read,
+so a label line the program printed is not taken as the verdict unless it is
+the last line of output with no CLI label after it to tell them apart.
 
 # Tokens
 
@@ -76,10 +80,15 @@ _SESSION_CONTEXT_PREFIX = "<session_context>"
 
 _SHELL_TOOL = "run_shell_command"
 
-# Full-line matches: the command's own output comes first in the result text,
-# so the LAST match is the CLI's label, never a line the program printed.
-_RE_EXIT_CODE = re.compile(r"^Exit Code: (-?\d+)\s*$", re.MULTILINE)
-_RE_SIGNAL = re.compile(r"^Signal: (\S+)\s*$", re.MULTILINE)
+# The labels the CLI may append after `Output: ...`, last first. The result is
+# read from its last line upward, each label at most once and only in this
+# order, so a label line inside the program's output ends the scan.
+_RE_TRAILER = (
+    ("pgid", re.compile(r"^Process Group PGID: \S+\s*$")),
+    ("pids", re.compile(r"^Background PIDs: .*$")),
+    ("signal", re.compile(r"^Signal: (\S+)\s*$")),
+    ("exit", re.compile(r"^Exit Code: (-?\d+)\s*$")),
+)
 
 
 def parse_gemini(
@@ -391,11 +400,26 @@ def _failed(raw_name: str, response: dict) -> bool:
     output = response.get("output")
     if not isinstance(output, str):
         return False
-    codes = _RE_EXIT_CODE.findall(output)
-    if codes and codes[-1] != "0":
+    verdict = _shell_trailer(output)
+    if verdict.get("exit", "0") != "0":
         return True
-    signals = _RE_SIGNAL.findall(output)
-    return bool(signals and signals[-1] not in ("(none)", "0"))
+    return verdict.get("signal", "(none)") not in ("(none)", "0")
+
+
+def _shell_trailer(output: str) -> dict[str, str]:
+    """The CLI's own labels at the end of a shell result, keyed by label."""
+    lines = output.split("\n")
+    found: dict[str, str] = {}
+    slot = 0
+    # Line 0 is `Output: ...`, written by the CLI ahead of any label.
+    while len(lines) > 1 and slot < len(_RE_TRAILER):
+        key, pattern = _RE_TRAILER[slot]
+        slot += 1
+        m = pattern.match(lines[-1])
+        if m:
+            found[key] = m.group(1) if m.groups() else ""
+            lines.pop()
+    return found
 
 
 __all__ = ["parse_gemini"]
