@@ -49,24 +49,26 @@ interface Props {
  */
 export function ExplorerToolbar(props: Props) {
   return (
-    <div
-      role="group"
-      aria-label="Filter the map, timeline and side panel"
-      className="flex shrink-0 flex-wrap items-center gap-1.5"
-    >
-      {props.tasks.length > 1 ? <TaskPicker {...props} /> : null}
-      {props.agents.length ? <AgentPicker {...props} /> : null}
-      {props.models.length > 1 ? <ModelPicker {...props} /> : null}
-      {props.filtered ? (
-        <Button
-          variant="link"
-          size="sm"
-          onClick={props.onClear}
-          className="h-7 px-1.5 text-ds-text-subtle"
-        >
-          Clear filters
-        </Button>
-      ) : null}
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+      <div
+        role="group"
+        aria-label="Filter the map, timeline and side panel"
+        className="flex flex-wrap items-center gap-1.5"
+      >
+        {props.tasks.length > 1 ? <TaskPicker {...props} /> : null}
+        {props.agents.length ? <AgentPicker {...props} /> : null}
+        {props.models.length > 1 ? <ModelPicker {...props} /> : null}
+        {props.filtered ? (
+          <Button
+            variant="link"
+            size="sm"
+            onClick={props.onClear}
+            className="h-7 px-1.5 text-ds-text-subtle"
+          >
+            Clear filters
+          </Button>
+        ) : null}
+      </div>
       <CopyLinkButton />
     </div>
   );
