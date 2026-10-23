@@ -63,8 +63,10 @@ def _scope(verb: str) -> frozenset[str]:
     failing unit suite is never "replaced" by a passing e2e one.
     """
     words = [w for w in re.split(r"[^a-z0-9]+", verb.lower()) if w][1:]
-    job_words = {w for _, ws in _PURPOSES for w in ws}
-    return frozenset(w for w in words if w not in ("run", "exec", "x") and not any(j in w for j in job_words))
+    # Whole job words only (and their plurals): `unittest` or `smoke-tests` keep their target.
+    job_words = {p for _, ws in _PURPOSES for w in ws for p in re.split(r"[^a-z0-9]+", w) if p}
+    generic = job_words | {"run", "exec", "x"}
+    return frozenset(w for w in words if w not in generic and not (w.endswith("s") and w[:-1] in job_words))
 
 
 def purpose(verb: str) -> str | None:

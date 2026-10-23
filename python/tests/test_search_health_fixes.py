@@ -455,6 +455,8 @@ def test_a_replacement_check_must_cover_the_same_target():
     rows = [_row("s1", cmd=cmd, verifyAfterLastEdit=True)]
     assert [f for f in health.fixes(rows) if f["rule"] == "use_working_command"] == []
     assert health._scope("pnpm test") == health._scope("pnpm vitest")  # the case the rule exists for
+    assert health._scope("pnpm unittest") != health._scope("pnpm vitest")  # a target spelled with a job word
+    assert health._scope("pnpm run tests") == health._scope("pnpm test")
 
 
 def test_one_multi_file_reread_charges_one_request():
