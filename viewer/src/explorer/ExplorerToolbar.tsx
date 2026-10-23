@@ -1,5 +1,5 @@
-import { useRef, useState, type ReactNode, type RefObject } from 'react';
-import { CaretDown, Check } from '@phosphor-icons/react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { CaretDown, Check, Link } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -67,7 +67,59 @@ export function ExplorerToolbar(props: Props) {
           Clear filters
         </Button>
       ) : null}
+      <CopyLinkButton />
     </div>
+  );
+}
+
+/** A local button that copies the current viewer URL to clipboard. */
+function CopyLinkButton() {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        setCopied(false);
+      }, 2000);
+    } catch {
+      // Fallback or ignore clipboard errors quietly in non-secure contexts
+    }
+  };
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={handleCopy}
+      aria-label={copied ? 'Link copied' : 'Copy link to current view'}
+      aria-live="polite"
+      className={cn(
+        'h-7 gap-1.5 px-2.5 font-normal text-ds-text-darker transition-colors',
+        copied && 'border-ds-brand-subtler bg-ds-brand-lightest text-ds-brand-default'
+      )}
+    >
+      {copied ? (
+        <>
+          <Check size={12} aria-hidden className="shrink-0" />
+          <span>Copied</span>
+        </>
+      ) : (
+        <>
+          <Link size={12} aria-hidden className="shrink-0 text-ds-text-subtle" />
+          <span>Copy link</span>
+        </>
+      )}
+    </Button>
   );
 }
 
