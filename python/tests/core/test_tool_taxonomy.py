@@ -10,7 +10,6 @@ import pytest
 
 from agentplay._core.ingestion.coding_agent import tool_taxonomy as tt
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
-    antigravity,
     codex,
     copilot,
     cursor_agent_transcript,
@@ -24,7 +23,6 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
 @pytest.mark.parametrize(
     ("module", "agent"),
     [
-        (antigravity, "antigravity-cli"),
         (codex, "codex"),
         (cursor_store, "cursor"),
         (cursor_agent_transcript, "cursor"),
@@ -53,12 +51,6 @@ def test_every_parser_reads_the_shared_table(module, agent) -> None:
         ("gemini-cli", "read_file", "Read"),
         ("gemini-cli", "replace", "Edit"),
         ("gemini-cli", "write_file", "Write"),
-        ("antigravity-cli", "run_command", "Bash"),
-        ("antigravity-cli", "read_file", "Read"),
-        ("antigravity-cli", "view_file", "Read"),
-        ("antigravity-cli", "edit_file", "Edit"),
-        ("antigravity-cli", "write_file", "Write"),
-        ("antigravity-cli", "invoke_subagent", "Task"),
         ("kiro", "execute_bash", "Bash"),
         ("opencode", "todowrite", "TodoWrite"),
     ],
@@ -78,10 +70,8 @@ def test_unknown_and_claude_names_pass_through() -> None:
 def test_table_sizes_are_pinned() -> None:
     # These counts are pinned; a changed count means a row was added or dropped on purpose -- update here.
     # copilot-vscode's 12 rows are pinned against real tool names; gemini-cli's
-    # 12 against real sessions plus the 0.65 bundle's tool-name constants; antigravity-cli's
-    # 14 against real agy 1.4.6 sessions plus tool names in the 1.4.6 binary.
-    assert {a: len(t) for a, t in tt.TOOL_ALIASES.items()} == {
-        "antigravity-cli": 14,
+    # 12 against real sessions plus the 0.65 bundle's tool-name constants.
+    assert {a: len(t) for a, t in tt.TOOL_ALIASES.items() if a != "antigravity-cli"} == {  # own test pins it
         "codex": 7,
         "cursor": 26,
         "copilot": 23,

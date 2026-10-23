@@ -16,9 +16,6 @@ returns the agent type by sniffing for marker lines:
 - Kiro: synthesized header line with `type="kiro_session"`.
 - Gemini CLI: header line with `sessionId` + `projectHash` and no `type`, or a
   `type="gemini"` message (`~/.gemini/tmp/<project>/chats/session-*.jsonl`).
-- Antigravity CLI: step lines with an int `step_index`, a `source` and a step
-  `type` (`~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/
-  transcript_full.jsonl`).
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,

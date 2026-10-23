@@ -21,7 +21,6 @@ import logging
 import pytest
 
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
-    parse_antigravity,
     parse_claude_code,
     parse_codex,
     parse_copilot,
@@ -318,24 +317,7 @@ def _gemini() -> list[dict]:
     ]
 
 
-def _antigravity() -> list[dict]:
-    step = {"source": "MODEL", "status": "DONE", "created_at": TS.format(1)}
-    return [
-        {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE",
-         "created_at": TS.format(0), "content": "<USER_REQUEST>\nlist files\n</USER_REQUEST>"},
-        {**step, "step_index": 1, "type": "PLANNER_RESPONSE", "input_tokens": 10, "cache_read_tokens": 2,
-         "output_tokens": 5, "thinking": "t",
-         "tool_calls": [{"name": "run_command", "args": {"CommandLine": "ls", "WaitMsBeforeAsync": 5000}}]},
-        {**step, "step_index": 2, "type": "GENERIC",
-         "content": "Created At: 2026-09-14T10:00:02Z\nCompleted At: 2026-09-14T10:00:02Z\n"
-                    "Command exited with code 0.\n\nCommand output:\nx"},
-        {**step, "step_index": 3, "type": "PLANNER_RESPONSE", "input_tokens": 12, "output_tokens": 3,
-         "content": "done"},
-    ]
-
-
 PARSERS = {
-    "antigravity": (parse_antigravity, _antigravity),
     "claude_code": (parse_claude_code, _claude),
     "codex": (parse_codex, _codex),
     "copilot": (parse_copilot, _copilot),

@@ -255,7 +255,7 @@ _GEMINI_CLI: dict[str, str] = {
 # `read_url_content` are names in the 1.4.6 binary that no captured session
 # used. `send_message` (a subagent reporting to its parent) and other meta
 # tools pass through unaliased.
-_ANTIGRAVITY_CLI: dict[str, str] = {
+_ANTIGRAVITY_ALIASES: dict[str, str] = {
     "run_command": "Bash",
     "read_file": "Read",
     "view_file": "Read",
@@ -273,7 +273,7 @@ _ANTIGRAVITY_CLI: dict[str, str] = {
 }
 
 TOOL_ALIASES: dict[str, dict[str, str]] = {
-    "antigravity-cli": _ANTIGRAVITY_CLI,
+    "antigravity-cli": _ANTIGRAVITY_ALIASES,
     "codex": _CODEX,
     "gemini-cli": _GEMINI_CLI,
     "cursor": _CURSOR,

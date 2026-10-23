@@ -44,17 +44,8 @@ from ._util import captured
 
 logger = logging.getLogger("agentplay.discover")
 
-AGENTS = (
-    "claude-code",
-    "codex",
-    "cursor",
-    "copilot",
-    "copilot-vscode",
-    "opencode",
-    "kiro",
-    "gemini-cli",
-    "antigravity-cli",
-)
+AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli",
+          "antigravity-cli")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -283,8 +274,7 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
         raise SkipSession("no_spans")
-    # A subagent stored as its own conversation (Antigravity CLI) carries its
-    # role and parent on the root span.
+    # A subagent stored as its own conversation (Antigravity CLI) carries its role and parent on the root span.
     root = next((s for s in spans if s.parent_id is None), None)
     root_attrs = root.attributes if root is not None else {}
     return builder.build_map_from_spans(

@@ -25,6 +25,7 @@ tests build one from the real column schema with made-up rows.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import sqlite3
@@ -34,16 +35,18 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, discover
-from agentplay._core.ingestion.coding_agent._sources.local import source as local_source
+from agentplay._core.ingestion.coding_agent import tool_taxonomy as tt
+from agentplay._core.ingestion.coding_agent._sources.local import antigravity_index
+from agentplay._core.ingestion.coding_agent._sources.local.antigravity_index import _path_from_file_uri
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
+    antigravity,
     detect_agent,
     parse_antigravity,
 )
-from agentplay._core.ingestion.coding_agent._sources.local.source import (
-    LocalSource,
-    _path_from_file_uri,
-)
+from agentplay._core.ingestion.coding_agent._sources.local.source import LocalSource
+
+from .test_parser_robustness import WRONG_TYPES, _assign, _damage_cases, _encode, _paths
 
 FIXTURES = Path(__file__).parent / "fixtures" / "antigravity"
 GEMINI_FIXTURES = Path(__file__).parent / "fixtures" / "gemini"
@@ -675,7 +678,7 @@ def test_deeply_nested_workspace_uris_do_not_abort_discovery(tmp_path, monkeypat
     except RecursionError:
         pass
     else:
-        real_loads = local_source.json.loads
+        real_loads = antigravity_index.json.loads
 
         def loads(raw, *args, **kwargs):
             text = raw if isinstance(raw, str) else bytes(raw).decode("utf-8", "replace")
@@ -683,7 +686,7 @@ def test_deeply_nested_workspace_uris_do_not_abort_discovery(tmp_path, monkeypat
                 raise RecursionError("maximum recursion depth exceeded")
             return real_loads(raw, *args, **kwargs)
 
-        monkeypatch.setattr(local_source.json, "loads", loads)
+        monkeypatch.setattr(antigravity_index.json, "loads", loads)
 
     home = _antigravity_home(tmp_path, names=("read_explain", "failed_edit"))
     (home / "conversation_summaries.db").unlink()
@@ -712,7 +715,7 @@ def test_summaries_copy_stops_after_three_changing_snapshots(tmp_path, monkeypat
     wal.write_bytes(b"wal")
     shm.write_bytes(b"shm")
     copies: list[str] = []
-    real_copy = local_source.shutil.copyfile
+    real_copy = antigravity_index.shutil.copyfile
 
     def copyfile(src, dst, *args, **kwargs):
         real_copy(src, dst, *args, **kwargs)
@@ -723,8 +726,8 @@ def test_summaries_copy_stops_after_three_changing_snapshots(tmp_path, monkeypat
         if name == db.name:
             wal.write_bytes(b"wal" + b"x" * copies.count(name))
 
-    monkeypatch.setattr(local_source.shutil, "copyfile", copyfile)
-    caplog.set_level(logging.DEBUG, logger=local_source.logger.name)
+    monkeypatch.setattr(antigravity_index.shutil, "copyfile", copyfile)
+    caplog.set_level(logging.DEBUG, logger=antigravity_index.logger.name)
     source = LocalSource(claude_code_homes=[], codex_homes=[], antigravity_homes=[home])
     source._build_index()
     assert source.get_cwd(f"local:antigravity-cli:{IDS['read_explain']}") == "/Users/dev/project"
@@ -907,3 +910,99 @@ def test_built_map_of_a_subagent_records_its_parent():
     doc = _map("subagent_child", role="subagent", parent_session_id=parent)
     assert doc["session"]["role"] == "subagent"
     assert doc["session"]["parentSessionId"] == parent
+
+
+# ---------------------------------------------------------------- shared sweeps and alias table
+# The structural-damage and wrong-type sweeps from test_parser_robustness.py, run
+# on a minimal agy step log, and the alias-table checks from test_tool_taxonomy.py.
+
+ROBUSTNESS_TS = "2026-09-14T10:00:0{}Z"
+DAMAGE_CASES = (
+    "truncated_last_line",
+    "invalid_json_line",
+    "non_dict_json",
+    "unknown_record_type",
+    "bom_prefix",
+    "non_utf8_bytes",
+    "blank_lines",
+)
+
+
+def _robustness_records() -> list[dict]:
+    step = {"source": "MODEL", "status": "DONE", "created_at": ROBUSTNESS_TS.format(1)}
+    return [
+        {"step_index": 0, "source": "USER_EXPLICIT", "type": "USER_INPUT", "status": "DONE",
+         "created_at": ROBUSTNESS_TS.format(0), "content": "<USER_REQUEST>\nlist files\n</USER_REQUEST>"},
+        {**step, "step_index": 1, "type": "PLANNER_RESPONSE", "input_tokens": 10, "cache_read_tokens": 2,
+         "output_tokens": 5, "thinking": "t",
+         "tool_calls": [{"name": "run_command", "args": {"CommandLine": "ls", "WaitMsBeforeAsync": 5000}}]},
+        {**step, "step_index": 2, "type": "GENERIC",
+         "content": "Created At: 2026-09-14T10:00:02Z\nCompleted At: 2026-09-14T10:00:02Z\n"
+                    "Command exited with code 0.\n\nCommand output:\nx"},
+        {**step, "step_index": 3, "type": "PLANNER_RESPONSE", "input_tokens": 12, "output_tokens": 3,
+         "content": "done"},
+    ]
+
+
+def _turn_count(data: bytes) -> int:
+    return len(_turns(parse_antigravity(data, "t")[1]))
+
+
+def test_robustness_clean_log_yields_a_turn():
+    assert _turn_count(_encode(_robustness_records())) >= 1
+
+
+@pytest.mark.parametrize("case", DAMAGE_CASES)
+def test_robustness_structural_damage_keeps_the_session(case, caplog):
+    caplog.set_level(logging.CRITICAL)
+    clean = _encode(_robustness_records())
+    assert _turn_count(_damage_cases(clean)[case]) == _turn_count(clean)
+
+
+def test_robustness_wrong_typed_fields_never_raise(caplog):
+    caplog.set_level(logging.CRITICAL)
+    base = _robustness_records()
+    failures = []
+    for index, record in enumerate(base):
+        for path in _paths(record):
+            for bad in WRONG_TYPES:
+                records = copy.deepcopy(base)
+                _assign(records[index], path, bad)
+                try:
+                    parse_antigravity(_encode(records), "t")
+                except Exception as exc:
+                    failures.append(f"record {index} {path} = {bad!r}: {type(exc).__name__}: {exc}")
+    assert not failures, "\n".join(failures[:25])
+
+
+def test_robustness_wrong_typed_record_keeps_other_records():
+    """A record whose every field is junk costs only itself."""
+    base = _robustness_records()
+    junk = {"type": 123, "timestamp": 123, "message": "str", "payload": None, "usage": [], "content": None}
+    assert _turn_count(_encode([*base, junk])) == _turn_count(_encode(base))
+
+
+def test_parser_reads_the_shared_alias_table():
+    # Same object, not a copy: a new row in tool_taxonomy reaches the parser.
+    assert antigravity._TOOL_ALIASES is tt.aliases_for("antigravity-cli")
+
+
+@pytest.mark.parametrize(
+    ("raw", "canonical"),
+    [
+        ("run_command", "Bash"),
+        ("read_file", "Read"),
+        ("view_file", "Read"),
+        ("edit_file", "Edit"),
+        ("write_file", "Write"),
+        ("invoke_subagent", "Task"),
+    ],
+)
+def test_known_raw_names_resolve(raw, canonical):
+    assert tt.aliases_for("antigravity-cli")[raw] == canonical
+
+
+def test_alias_table_size_is_pinned():
+    # 14 rows: names seen in real agy 1.4.6 sessions plus tool names in the 1.4.6
+    # binary. A changed count means a row was added or dropped on purpose.
+    assert len(tt.aliases_for("antigravity-cli")) == 14

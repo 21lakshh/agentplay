@@ -244,6 +244,20 @@ def parse_antigravity(
     return trace, all_spans
 
 
+def is_antigravity_step(obj: dict) -> bool:
+    """True for an agy step-log line: an int `step_index`, a `source` string and a step `type`.
+
+    No other agent writes `step_index`, and these upper-case types are agy's own.
+    """
+    index = obj.get("step_index")
+    return (
+        obj.get("type") in _STEP_TYPES
+        and isinstance(index, int)
+        and not isinstance(index, bool)
+        and isinstance(obj.get("source"), str)
+    )
+
+
 def _steps(records: list[dict]) -> list[dict]:
     """Known steps ordered by `step_index`, keeping the last copy of each index."""
     latest: dict[int, dict] = {}
@@ -418,4 +432,4 @@ def _labelled_time(content: str, pattern: re.Pattern[str]) -> datetime | None:
     return None
 
 
-__all__ = ["parse_antigravity"]
+__all__ = ["is_antigravity_step", "parse_antigravity"]
