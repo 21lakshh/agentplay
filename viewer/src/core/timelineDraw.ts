@@ -508,16 +508,18 @@ export function drawAxis(
   const N = events.length;
   ctx.fillStyle = col('var(--ds-text-subtler)');
   ctx.font = g.mono;
-  for (let q = 0; q <= 4; q++) {
-    let i = pos.findIndex((v) => v >= q / 4);
-    if (i < 0) i = N - 1;
+  const ticks = [0, 1, 2, 3, 4].map((q) => {
+    const i = pos.findIndex((v) => v >= q / 4);
+    return i < 0 ? N - 1 : i;
+  });
+  const labels = axisTickLabels(
+    startedAt,
+    ticks.map((i) => events[i]?.t ?? 0)
+  );
+  ticks.forEach((i, q) => {
     ctx.textAlign = q === 0 ? 'left' : q === 4 ? 'right' : 'center';
-    ctx.fillText(
-      clockAt(startedAt, events[i]?.t ?? 0).slice(0, 5),
-      x(i),
-      height - 6
-    );
-  }
+    ctx.fillText(labels[q], x(i), height - 6);
+  });
   ctx.textAlign = 'left';
   ctx.font = g.sans;
 }
