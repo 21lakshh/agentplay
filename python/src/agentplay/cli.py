@@ -332,19 +332,19 @@ def _health_fixes(st: Store, days: int = 30) -> list[dict]:
 
 
 def _pick_fix(st: Store, items: list[dict], target: str) -> dict | None:
-    """A fix by its 1-based number in ``items`` or by id (the viewer shows ids, over any window)."""
+    """A fix by id (the viewer shows ids, over any window), else by its 1-based number in ``items``.
+
+    Ids come first: they are hex, so one can be all digits.
+    """
     if not target:
         return None
-    # An exact id first: ids are hex, so one can be all digits.
-    exact = next((f for f in items if f["id"] == target), None)
-    if exact is not None:
-        return exact
-    if target.isdigit() and len(target) < 12:
-        n = int(target)
-        return items[n - 1] if 1 <= n <= len(items) else None
-    return next(
-        (f for f in _health_fixes(st, days=36500) if f["id"] == target), None
-    )
+    by_id = next((f for f in items if f["id"] == target), None)
+    if by_id is None and len(target) == 12:
+        by_id = next((f for f in _health_fixes(st, days=36500) if f["id"] == target), None)
+    if by_id is not None or not target.isdigit():
+        return by_id
+    n = int(target)
+    return items[n - 1] if 1 <= n <= len(items) else None
 
 
 def cmd_fix(args: argparse.Namespace) -> int:

@@ -393,13 +393,15 @@ def test_resolver_roots_keep_the_latest_checkout(tmp_path):
     assert r.roots()[name] == str(a)
 
 
-def test_an_all_digit_fix_id_is_matched_before_a_list_number(tmp_path):
+def test_an_all_digit_fix_id_is_matched_before_a_list_number(monkeypatch):
     from agentplay import cli
 
     items = [{"id": "aaaaaaaaaaaa"}, {"id": "123456789012"}]
     assert cli._pick_fix(None, items, "123456789012")["id"] == "123456789012"
     assert cli._pick_fix(None, items, "1")["id"] == "aaaaaaaaaaaa"
     assert cli._pick_fix(None, items, "0") is None
+    monkeypatch.setattr(cli, "_health_fixes", lambda *_a, **_k: [])
+    assert cli._pick_fix(None, items, "000000000002")["id"] == "123456789012"  # zero-padded number
 
 
 def test_bad_cron_time_leaves_the_hook_alone(monkeypatch, capsys):
