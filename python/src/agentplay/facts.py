@@ -18,7 +18,7 @@ from typing import Any
 
 from .builder import _NON_CALL_KINDS, _error_source, estimate_cost_usd
 
-FACTS_VERSION = 2
+FACTS_VERSION = 3
 
 # Outcomes whose whole cost counts as abandoned spend. `interrupted` is left
 # out on purpose: stopping an agent is often the right call.
@@ -246,7 +246,7 @@ def command_label(e: dict[str, Any]) -> str:
     """
     verb = str(e.get("verb") or e.get("tool") or "?")
     action = (e.get("vcs") or {}).get("action")
-    if action and str(action) not in verb:
+    if action and verb.split(" ")[0] in ("git", "gh") and str(action) not in verb:
         verb = f"{verb} {action}"
     return verb[:60]
 

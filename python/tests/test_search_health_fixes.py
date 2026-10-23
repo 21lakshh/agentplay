@@ -290,3 +290,19 @@ def test_sessions_search_returns_chips(tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_replacement_commands_must_do_the_same_job():
+    cmd = {"git push": {"calls": 10, "fails": 8, "retries": 0, "byClass": {"exit_code": 8}, "outBytes": 0},
+           "git commit": {"calls": 9, "fails": 0, "retries": 0, "byClass": {}, "outBytes": 0},
+           "pnpm vitest": {"calls": 10, "fails": 8, "retries": 0, "byClass": {"exit_code": 8}, "outBytes": 0},
+           "pnpm lint": {"calls": 9, "fails": 0, "retries": 0, "byClass": {}, "outBytes": 0}}
+    rows = [_row("s1", cmd=cmd, verifyAfterLastEdit=True)]
+    assert [f for f in health.fixes(rows) if f["rule"] == "use_working_command"] == []
+
+
+def test_command_label_only_names_vcs_actions_on_git_and_gh():
+    from agentplay.facts import command_label
+
+    assert command_label({"verb": "git", "vcs": {"action": "push"}}) == "git push"
+    assert command_label({"verb": "pnpm test", "vcs": {"action": "status"}}) == "pnpm test"

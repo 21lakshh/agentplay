@@ -44,6 +44,24 @@ QUIET_FORMS = {
 }
 NOISY_BYTES = 40_000  # about 10k tokens of output per run
 
+# What a check command is for. A passing command only replaces a failing one
+# that does the same job: `pnpm vitest` for `pnpm test`, never `git commit`
+# for `git push` or a linter for a test runner.
+_PURPOSES = (
+    ("test", ("test", "vitest", "jest", "pytest", "mocha", "spec")),
+    ("lint", ("lint", "ruff", "eslint", "clippy", "flake8", "biome")),
+    ("typecheck", ("tsc", "mypy", "pyright", "typecheck", "type-check")),
+    ("build", ("build", "compile")),
+)
+
+
+def purpose(verb: str) -> str | None:
+    low = verb.lower()
+    for name, words in _PURPOSES:
+        if any(w in low for w in words):
+            return name
+    return None
+
 
 @dataclass
 class Totals:
@@ -236,14 +254,15 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     {"name": "verified_share"},
                 ))
 
-        # Efficiency: a failing command whose sibling passes.
+        # Efficiency: a failing check whose sibling, doing the same job, passes.
         for bad, c in cmds.items():
-            if c["fails"] < 5 or c["fails"] / c["calls"] < 0.4:
+            job = purpose(bad)
+            if job is None or " " not in bad or c["fails"] < 5 or c["fails"] / c["calls"] < 0.4:
                 continue
             family = bad.split()[0]
             good = sorted(
-                (v for v, g in cmds.items() if v != bad and v.split()[0] == family and g["calls"] >= 3
-                 and 1 - g["fails"] / g["calls"] >= 0.8),
+                (v for v, g in cmds.items() if v != bad and v.split()[0] == family and purpose(v) == job
+                 and g["calls"] >= 3 and 1 - g["fails"] / g["calls"] >= 0.8),
                 key=lambda v: -cmds[v]["calls"],
             )
             if not good:

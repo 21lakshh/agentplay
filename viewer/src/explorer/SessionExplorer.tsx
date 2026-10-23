@@ -220,6 +220,8 @@ export function SessionExplorer({
   const { list, sessions, selectedId } = data;
   const scanning = !!useSessionExplorerStatus().data?.scanning;
   const [, setScopeParams] = useQueryStates(SCOPE_PARAMS);
+  // A search chip opens its session at the matching event (`useSeekParam`).
+  const [, setJumpAt] = useQueryState('at', parseAsInteger);
   // One sidebar: the list until a session is picked (or one is linked), then
   // only that session; "All sessions" flips back without touching the URL.
   const [sidebarMode, setSidebarMode] = useState<'list' | 'session'>(() =>
@@ -307,6 +309,19 @@ export function SessionExplorer({
       loadingMore={list.isFetchingNextPage}
       onLoadMore={() => void list.fetchNextPage()}
       unavailable={data.mapQuery.unavailable}
+      onJump={(id, seq) => {
+        if (id !== selectedId) void setScopeParams(CLEAR_SCOPE_PARAMS);
+        void data.setSelected(id);
+        void setJumpAt(seq);
+      }}
+      searchNote={
+        list.data?.pages[0]?.searchNote?.code === 'arguments' ? (
+          <p role="note" className="rounded-md bg-ds-warning-subtlest px-2 py-1.5 ds-text-body-xs-medium text-ds-warning-darker">
+            Command arguments are never stored, so they can&rsquo;t be searched. Showing sessions that ran{' '}
+            <code className="font-mono">{list.data.pages[0].searchNote.command}</code>.
+          </p>
+        ) : null
+      }
       header={
         <SessionListHeader
           count={sessions.length}

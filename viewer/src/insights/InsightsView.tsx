@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { parseAsStringEnum, useQueryState } from 'nuqs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { CalendarBlankIcon } from '@phosphor-icons/react';
 import {
   Select,
@@ -23,6 +25,11 @@ import {
   WhatFails,
 } from './panels';
 import { SearchHeatmap } from './SearchHeatmap';
+import { RunHealthView } from './RunHealthView';
+import { AutotuneView } from './AutotuneView';
+
+const PAGES = ['overview', 'health', 'autotune'] as const;
+type Page = (typeof PAGES)[number];
 
 const ALL = '__all__';
 
@@ -91,11 +98,12 @@ export function InsightsView({
   const range = useMemo(() => sessionWindowRange(windowKey, new Date()), [windowKey]);
   const stats = useInsightsStats(range);
   const [filter, setFilter] = useState<InsightsFilter>({});
+  const [page, setPage] = useQueryState('ipage', parseAsStringEnum([...PAGES]).withDefault('overview'));
   const all = stats.data?.sessions ?? [];
   const options = useMemo(() => filterOptions(all), [all]);
   const rows = useMemo(() => filterSessions(all, filter), [all, filter]);
 
-  if (!source.stats) {
+  if (!source.stats && page === 'overview') {
     return (
       <Notice>
         Insights read the facts the CLI stores for each session, so they are not available for opened map files. Go back
@@ -113,6 +121,19 @@ export function InsightsView({
             Patterns across your sessions. Root sessions only; computed on this machine.
           </p>
         </div>
+        <ToggleGroup
+          value={[page]}
+          onValueChange={(v: unknown[]) => {
+            const next = v.find((x): x is Page => (PAGES as readonly unknown[]).includes(x));
+            if (next) void setPage(next === 'overview' ? null : next);
+          }}
+          aria-label="Insights pages"
+          className="mr-auto"
+        >
+          <ToggleGroupItem value="overview">Overview</ToggleGroupItem>
+          <ToggleGroupItem value="health">Run health</ToggleGroupItem>
+          <ToggleGroupItem value="autotune">Autotune</ToggleGroupItem>
+        </ToggleGroup>
         <div className="flex flex-wrap items-end gap-2" role="group" aria-label="Filters">
           <label className="flex min-w-36 flex-col gap-1 ds-text-body-xs-semibold uppercase tracking-wide text-ds-text-subtle">
             Window
@@ -136,6 +157,7 @@ export function InsightsView({
               </SelectContent>
             </Select>
           </label>
+          {page === 'overview' ? (<>
           <FilterSelect
             label="Agent"
             value={filter.agent ?? null}
@@ -158,8 +180,13 @@ export function InsightsView({
             allLabel="All models"
             onChange={(model) => setFilter((f) => ({ ...f, model }))}
           />
+          </>) : null}
         </div>
       </div>
+
+      {page === 'health' ? <RunHealthView range={range} /> : null}
+      {page === 'autotune' ? <AutotuneView /> : null}
+      {page !== 'overview' ? null : (<>
 
       {stats.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
@@ -193,6 +220,7 @@ export function InsightsView({
           <SearchHeatmap rows={rows} />
         </>
       )}
+      </>)}
     </main>
   );
 }

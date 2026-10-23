@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import {
   keepPreviousData,
   useInfiniteQuery,
+  useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
@@ -262,5 +263,52 @@ export function useInsightsStats(range: { from?: string; to?: string }) {
     staleTime: 60 * 1000,
     placeholderData: keepPreviousData,
     retry: false,
+  });
+}
+
+/** Run health for a range. Local server only. */
+export function useHealth(range: { from?: string; to?: string }) {
+  const source = useSessionMapSource();
+  return useQuery({
+    queryKey: ['health', source.id, range.from ?? '', range.to ?? ''] as const,
+    queryFn: () => {
+      if (!source.health) throw new SessionExplorerError('Run health needs the local CLI', 'unsupported');
+      return source.health(range);
+    },
+    enabled: !!source.health,
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}
+
+/** Autotune status. Local server only. */
+export function useAutotune() {
+  const source = useSessionMapSource();
+  return useQuery({
+    queryKey: ['autotune', source.id] as const,
+    queryFn: () => {
+      if (!source.autotune) throw new SessionExplorerError('Autotune needs the local CLI', 'unsupported');
+      return source.autotune();
+    },
+    enabled: !!source.autotune,
+    staleTime: 15 * 1000,
+    retry: false,
+  });
+}
+
+/** A write to the local server; refreshes health and Autotune afterwards. */
+export function useWrite() {
+  const source = useSessionMapSource();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { path: '/api/fix' | '/api/repos' | '/api/autotune'; body: Record<string, unknown> }) => {
+      if (!source.write) throw new SessionExplorerError('Writing fixes needs the local CLI', 'unsupported');
+      return source.write(v.path, v.body);
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['health'] });
+      void queryClient.invalidateQueries({ queryKey: ['autotune'] });
+    },
   });
 }

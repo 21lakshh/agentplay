@@ -19,7 +19,7 @@ from typing import Any
 
 from .facts import command_label
 
-SEARCH_VERSION = 1
+SEARCH_VERSION = 2
 FACETS = ("file", "cmd", "mcp", "skill", "subagent", "model", "repo", "host", "err")
 # Postings kept per term per session: enough to step through, small enough to load.
 MAX_SEQS = 40

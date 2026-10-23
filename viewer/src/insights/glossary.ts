@@ -122,6 +122,52 @@ export const GLOSSARY = {
       ['Re-reads after compaction', 'Files read again after a compaction with no change to them in between.'],
     ],
   },
+  runHealth: {
+    title: 'Run health',
+    paras: [
+      'A 0–100 score for how well your agents are set up and run, not how hard the work was. It adds five parts worth 20 points each.',
+      `It compares you only with your own previous window of the same length. No total is shown until the window has ${MIN_SAMPLE} sessions.`,
+    ],
+  },
+  components: {
+    title: 'Run health components',
+    paras: ['Each part scores 0–20 from a formula over your sessions in the window. Select one to see its inputs and the sessions that cost the most points.'],
+    rows: [
+      ['Shipping', 'Sessions that opened a PR ÷ sessions that edited code.'],
+      ['Verification', 'Sessions where tests, a build or a linter passed after the last edit ÷ sessions that edited code.'],
+      ['Efficiency', 'Half how few calls failed or were retried, half the share of input read from the prompt cache.'],
+      ['Context hygiene', 'How rarely sessions reach the context limit, and how few files are re-read after they do.'],
+      ['Environment health', 'How rarely calls fail on configuration: permissions, blocked or missing commands, hooks and MCP servers.'],
+    ],
+  },
+  pointsOnTable: {
+    title: 'Points on the table',
+    paras: [
+      'Patterns in your sessions that cost Run health points, each with a fix. A fix only appears when it can name the command, tool or server behind it.',
+      'Points are what the score would gain if the pattern stopped: the component recomputed without the failures, or with the rate raised to a target. They are estimates; Autotune checks them against what happens next.',
+    ],
+  },
+  autotune: {
+    title: 'Autotune',
+    paras: [
+      'Once a day agentplay reruns the Run health rules on your last 30 days, writes the fixes it is allowed to, and removes earlier ones that stopped helping.',
+      'Anything that grants an agent access or runs code (permissions, hooks) waits here for your OK.',
+    ],
+  },
+  scopeFiles: {
+    title: 'The files it can change',
+    paras: ['Agents read these files at the start of each session:'],
+    rows: [
+      ['CLAUDE.local.md', 'Personal instructions, git-ignored. Autotune writes here by default.'],
+      ['CLAUDE.md', 'Shared instructions, committed with the repo. Only when you allow it for that repo.'],
+      ['.claude/settings.local.json', 'Commands the agent may run without asking. Always asks you first.'],
+      ['.claude/settings.json hooks', 'Scripts that run automatically, e.g. tests before the agent stops. Always asks you first.'],
+    ],
+  },
+  managedBlock: {
+    title: 'The managed block',
+    paras: ['agentplay only writes between <!-- agentplay:start --> and <!-- agentplay:end --> markers. Anything outside them is yours and never touched. Each line carries a marker, so Undo removes exactly what was added.'],
+  },
 } satisfies Record<string, Term>;
 
 export type TermKey = keyof typeof GLOSSARY;

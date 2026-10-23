@@ -582,10 +582,6 @@ class _Handler(BaseHTTPRequestHandler):
                 if search not in hay and r.get("sessionId") not in hits:
                     continue
             out.append(r)
-        if hits:
-            # Ranked by matches, then recency; title-only matches after.
-            out.sort(key=lambda r: (-(hits.get(r.get("sessionId"), {}).get("count") or 0),
-                                    "" if r.get("sessionId") in hits else "1"))
         start = _cursor_decode((q.get("cursor") or [None])[0])
         if start is None:
             return self._error(400, "invalid_input", "That page cursor is not valid.")
