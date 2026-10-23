@@ -172,3 +172,30 @@ def test_facts_files_are_capped_to_the_busiest_with_a_remainder():
 def test_small_sessions_have_no_remainder():
     f = facts.compute(_doc([], [{"id": 0, "repo": "r0", "path": "a.ts", "hits": 1, "reads": 1, "edits": 0}]))
     assert "filesRest" not in f
+
+
+def test_stats_serves_every_file_of_a_capped_session(tmp_path):
+    """A path below each session's cap still reaches the cross-session heatmap."""
+    st = Store(tmp_path)
+    for sid in ("s1", "s2"):
+        busy = [{"id": i, "repo": "r0", "path": f"{sid}/f{i}.ts", "hits": 5, "reads": 1, "edits": 0}
+                for i in range(facts.MAX_FACT_FILES + 10)]
+        shared = {"id": 9999, "repo": "r0", "path": "shared.ts", "hits": 1, "reads": 1, "edits": 0}
+        doc = _doc([], busy + [shared])
+        doc["session"]["id"] = sid
+        stamped = facts.stamp(doc)
+        assert "acme/api:shared.ts" not in stamped["facts"]["files"]  # the stored facts stay capped
+        st.put(doc, {"sessionId": sid, "contentHash": f"h{sid}", "calls": 1, "sessionDate": "2026-10-01", **stamped})
+    st.save_index()
+    httpd = serve(0, store=Store(tmp_path))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", httpd.server_address[1])
+        conn.request("GET", "/api/stats")
+        sessions = json.loads(conn.getresponse().read())["sessions"]
+        assert len(sessions) == 2
+        assert all(s["facts"]["files"]["acme/api:shared.ts"]["hits"] == 1 for s in sessions)
+        assert all(len(s["facts"]["files"]) == facts.MAX_FACT_FILES + 11 for s in sessions)
+        assert not any("filesRest" in s["facts"] for s in sessions)
+    finally:
+        httpd.shutdown()

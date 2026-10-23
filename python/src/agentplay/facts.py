@@ -145,6 +145,25 @@ def _rereads_after_compaction(evs: list[dict[str, Any]]) -> int:
     return n
 
 
+def file_counts(doc: dict[str, Any]) -> dict[str, dict[str, int]]:
+    """Every file the session touched, ``repo:path -> {hits, reads, edits}``, uncapped.
+
+    ``compute`` stores at most ``MAX_FACT_FILES`` of these; ``/api/stats`` reads the
+    full set for a capped session so the cross-session heatmap misses no path.
+    """
+    repo_names = {r["id"]: r["name"] for r in doc.get("repos") or [] if "id" in r and "name" in r}
+    files: dict[str, dict[str, int]] = {}
+    for f in doc.get("files") or []:
+        hits, reads, edits = int(f.get("hits") or 0), int(f.get("reads") or 0), int(f.get("edits") or 0)
+        if not (hits or reads or edits) or not f.get("path"):
+            continue
+        key = f"{repo_names.get(f.get('repo'), '')}:{f['path']}"
+        # Two repos can share a display name; add their counters rather than drop one.
+        prev = files.get(key) or {"hits": 0, "reads": 0, "edits": 0}
+        files[key] = {"hits": prev["hits"] + hits, "reads": prev["reads"] + reads, "edits": prev["edits"] + edits}
+    return files
+
+
 def compute(doc: dict[str, Any]) -> dict[str, Any]:
     """The facts for one map document.
 
@@ -159,7 +178,6 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
     evs = sorted(doc.get("events") or [], key=lambda e: e.get("seq", 0))
     outcome = str(s.get("outcome") or "completed")
     llm = [e for e in evs if e["kind"] == "llm"]
-    repo_names = {r["id"]: r["name"] for r in doc.get("repos") or [] if "id" in r and "name" in r}
 
     cmd: dict[str, dict[str, Any]] = {}
     for e in evs:
@@ -178,15 +196,7 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
             cls = str(e.get("errClass") or "other")
             c["byClass"][cls] = c["byClass"].get(cls, 0) + 1
 
-    files: dict[str, dict[str, int]] = {}
-    for f in doc.get("files") or []:
-        hits, reads, edits = int(f.get("hits") or 0), int(f.get("reads") or 0), int(f.get("edits") or 0)
-        if not (hits or reads or edits) or not f.get("path"):
-            continue
-        key = f"{repo_names.get(f.get('repo'), '')}:{f['path']}"
-        # Two repos can share a display name; add their counters rather than drop one.
-        prev = files.get(key) or {"hits": 0, "reads": 0, "edits": 0}
-        files[key] = {"hits": prev["hits"] + hits, "reads": prev["reads"] + reads, "edits": prev["edits"] + edits}
+    files = file_counts(doc)
     files_rest: dict[str, int] = {}
     if len(files) > MAX_FACT_FILES:
         ranked = sorted(files.items(), key=lambda kv: (-kv[1]["hits"], -(kv[1]["reads"] + kv[1]["edits"]), kv[0]))

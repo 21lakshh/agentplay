@@ -214,6 +214,8 @@ class _Handler(BaseHTTPRequestHandler):
     # map's content hash: the server never writes the index, which a background
     # scan may be saving at the same moment. The next build persists them.
     facts_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
+    # Uncapped `files` for sessions past facts.MAX_FACT_FILES, keyed like `facts_cache`.
+    files_cache: dict[tuple[str, str], dict[str, Any]] = {}
     # search.json as last read (by mtime and size) and postings computed for
     # sessions it does not cover yet. In memory only, like `facts_cache`.
     search_file: tuple[Any, dict[str, Any]] = (None, {})
@@ -606,6 +608,19 @@ class _Handler(BaseHTTPRequestHandler):
             self.facts_cache[key] = facts.stamp(doc)["facts"] if doc is not None else None
         return self.facts_cache[key]
 
+    def _all_files(self, row: dict[str, Any], f: dict[str, Any]) -> dict[str, Any]:
+        """A capped session's full ``files`` (stored facts keep ``facts.MAX_FACT_FILES``).
+
+        The heatmap sums files across sessions, so a path outside each session's
+        top files can still be among the busiest overall. Rare (sessions past the
+        cap), read from the stored map once per content hash.
+        """
+        key = (str(row.get("sessionId") or ""), str(row.get("contentHash") or ""))
+        if key not in self.files_cache:
+            doc = self.store.get(key[0])
+            self.files_cache[key] = facts.file_counts(doc) if doc is not None else f.get("files") or {}
+        return self.files_cache[key]
+
     def _stats(self, q: dict[str, list[str]]) -> None:
         lo = (q.get("from") or [""])[0]
         hi = (q.get("to") or [""])[0]
@@ -616,6 +631,9 @@ class _Handler(BaseHTTPRequestHandler):
                 continue
             with self.lock:
                 f = self._facts(r)
+                if f is not None and f.get("filesRest"):
+                    # The full list replaces the capped one, so its remainder would double-count.
+                    f = {**{k: v for k, v in f.items() if k != "filesRest"}, "files": self._all_files(r, f)}
             if f is None:
                 continue
             out.append({**{k: r.get(k) for k in _STATS_FIELDS}, "facts": f})
@@ -724,7 +742,7 @@ def serve(
     handler = type("Handler", (_Handler,), {
         "store": store or Store(), "static": viewer_root(), "scanning": scanning,
         # Per server, so two servers in one process never share computed facts or postings.
-        "facts_cache": {}, "search_mem": {}, "search_file": (None, {}),
+        "facts_cache": {}, "files_cache": {}, "search_mem": {}, "search_file": (None, {}),
     })
     try:
         return _Server((host, port), handler)
