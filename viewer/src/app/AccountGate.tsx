@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { EnvelopeSimple, LockSimple } from '@phosphor-icons/react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogPopup, DialogPortal, DialogTitle, DialogViewport } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -44,6 +45,7 @@ function useAccountAction(base: string) {
  */
 export function WelcomeGate({ base, state }: { base: string; state: AccountState | undefined }) {
   const [email, setEmail] = useState('');
+  const emailRef = useRef<HTMLInputElement>(null);
   const act = useAccountAction(base);
   const status = useSessionExplorerStatus();
   if (!showsWelcome(state)) return null;
@@ -54,85 +56,93 @@ export function WelcomeGate({ base, state }: { base: string; state: AccountState
     act.mutate({ action: 'signup', email: email.trim() });
   };
   const busy = act.isPending;
+  const skip = () => act.mutate({ action: 'skip' });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ds-surface-white/70 p-4 pt-[15vh] backdrop-blur-sm">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="welcome-title"
-        className="w-full max-w-md rounded-xl border border-ds-border-subtlest bg-ds-surface-white p-6 shadow-lg"
-      >
-        <img src="entelligence-logo.svg" alt="" className="mb-4 size-9" />
-        <h1 id="welcome-title" className="ds-text-title-md-semibold text-ds-text-darker">
-          {count > 0 ? `Your ${count} ${count === 1 ? 'session is' : 'sessions are'} ready` : 'Welcome to agentplay'}
-        </h1>
-        <p className="mt-1.5 ds-text-body-sm-medium text-ds-text-default">
-          agentplay is the first step toward coding agents that learn from their own mistakes.{' '}
-          <a
-            href={researchUrl('welcome')}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-ds-brand-subtle underline underline-offset-2 hover:text-ds-text-darker"
+    <Dialog
+      open
+      onOpenChange={(_, { reason }) => {
+        if (reason === 'escape-key' && !busy) skip();
+      }}
+    >
+      <DialogPortal>
+        <DialogViewport className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ds-surface-white/70 p-4 pt-[15vh] backdrop-blur-sm">
+          <DialogPopup
+            initialFocus={emailRef}
+            className="w-full max-w-md rounded-xl border border-ds-border-subtlest bg-ds-surface-white p-6 shadow-lg"
           >
-            Read how
-          </a>
-          , and get updates on Entelligence for you and your team.
-        </p>
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-2">
-          <label htmlFor="welcome-email" className="sr-only">
-            Email
-          </label>
-          <div className="flex gap-2">
-            <Input
-              id="welcome-email"
-              type="email"
-              autoComplete="email"
-              autoFocus
-              required
-              placeholder="you@company.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={act.isError || undefined}
-              aria-describedby={act.isError ? 'welcome-error' : 'welcome-privacy'}
-              disabled={busy}
-            />
-            <Button type="submit" disabled={busy || !email.trim()} className="shrink-0">
-              {busy ? 'Saving…' : 'Get updates'}
-            </Button>
-          </div>
-          {act.isError ? (
-            <p id="welcome-error" role="alert" className="ds-text-body-xs-medium text-ds-danger-default">
-              {act.error.message}
+            <img src="entelligence-logo.svg" alt="" className="mb-4 size-9" />
+            <DialogTitle render={<h1 />} className="ds-text-title-md-semibold text-ds-text-darker">
+              {count > 0 ? `Your ${count} ${count === 1 ? 'session is' : 'sessions are'} ready` : 'Welcome to agentplay'}
+            </DialogTitle>
+            <p className="mt-1.5 ds-text-body-sm-medium text-ds-text-default">
+              agentplay is the first step toward coding agents that learn from their own mistakes.{' '}
+              <a
+                href={researchUrl('welcome')}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ds-brand-subtle underline underline-offset-2 hover:text-ds-text-darker"
+              >
+                Read how
+              </a>
+              , and get updates on Entelligence for you and your team.
             </p>
-          ) : null}
-        </form>
-        <details id="welcome-privacy" className="mt-3 ds-text-body-xs-medium text-ds-text-subtle">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
-            <LockSimple size={12} className="shrink-0" aria-hidden />
-            <span>
-              Nothing from your sessions leaves this machine.{' '}
-              <span className="underline underline-offset-2">What&rsquo;s sent?</span>
-            </span>
-          </summary>
-          <p className="mt-1.5 pl-[18px]">
-            Signing up sends your email, a random install id, the agentplay version and the time. Your sessions,
-            prompts and code never leave this machine. Disconnect any time from the top bar.
-          </p>
-        </details>
-        <div className="mt-5 flex justify-end">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-ds-text-subtle"
-            disabled={busy}
-            onClick={() => act.mutate({ action: 'skip' })}
-          >
-            Continue without email
-          </Button>
-        </div>
-      </div>
-    </div>
+            <form onSubmit={submit} className="mt-4 flex flex-col gap-2">
+              <label htmlFor="welcome-email" className="sr-only">
+                Email
+              </label>
+              <div className="flex gap-2">
+                <Input
+                  ref={emailRef}
+                  id="welcome-email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  placeholder="you@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  aria-invalid={act.isError || undefined}
+                  aria-describedby={act.isError ? 'welcome-error' : 'welcome-privacy'}
+                  disabled={busy}
+                />
+                <Button type="submit" disabled={busy || !email.trim()} className="shrink-0">
+                  {busy ? 'Saving…' : 'Get updates'}
+                </Button>
+              </div>
+              {act.isError ? (
+                <p id="welcome-error" role="alert" className="ds-text-body-xs-medium text-ds-danger-default">
+                  {act.error.message}
+                </p>
+              ) : null}
+            </form>
+            <details id="welcome-privacy" className="mt-3 ds-text-body-xs-medium text-ds-text-subtle">
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 [&::-webkit-details-marker]:hidden">
+                <LockSimple size={12} className="shrink-0" aria-hidden />
+                <span>
+                  Nothing from your sessions leaves this machine.{' '}
+                  <span className="underline underline-offset-2">What&rsquo;s sent?</span>
+                </span>
+              </summary>
+              <p className="mt-1.5 pl-[18px]">
+                Signing up sends your email, a random install id, the agentplay version and the time. Your sessions,
+                prompts and code never leave this machine. Disconnect any time from the top bar.
+              </p>
+            </details>
+            <div className="mt-5 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-ds-text-subtle"
+                disabled={busy}
+                onClick={skip}
+              >
+                Continue without email
+              </Button>
+            </div>
+          </DialogPopup>
+        </DialogViewport>
+      </DialogPortal>
+    </Dialog>
   );
 }
 

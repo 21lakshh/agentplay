@@ -255,7 +255,8 @@ class SkipSession(Exception):
 
 
 def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
-              hmac_key: bytes | None = None, version: str = "") -> dict[str, Any]:
+              hmac_key: bytes | None = None, version: str = "",
+              resolver: builder.RepoResolver | None = None) -> dict[str, Any]:
     """Build the ``agentplay/v1`` document for one candidate.
 
     Claude Code is read straight from its JSONL (the only way to see subagent
@@ -269,7 +270,7 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
         raise SkipSession("too_large")
     if c.agent == "claude-code" and c.path.endswith(".jsonl"):
         return builder.build_claude_code_map(
-            Path(c.path), path_mode=path_mode, hmac_key=hmac_key, cli_version=version
+            Path(c.path), path_mode=path_mode, hmac_key=hmac_key, cli_version=version, resolver=resolver
         )
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
@@ -286,6 +287,7 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
         cli_version=version,
         role=root_attrs.get("harness.session_role") or None,
         parent_session_id=root_attrs.get("harness.parent_session_id") or None,
+        resolver=resolver,
         started_at_hint=c.mtime or None,
     )
 

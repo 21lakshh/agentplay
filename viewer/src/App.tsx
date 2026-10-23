@@ -9,6 +9,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { SessionExplorer } from '@/explorer/SessionExplorer';
+import { InsightsView } from '@/insights/InsightsView';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { SessionExplorerSkeleton } from '@/explorer/SessionExplorerStates';
 import { WINDOW_KEYS, type WindowKey } from '@/core/windowOptions';
 import { SessionMapSourceProvider } from '@/data/SourceContext';
@@ -74,8 +76,6 @@ export function App() {
   // `demo` doubles as the sample switch: present means show the bundled
   // sessions, absent means the user's own. `sample` is the reveal state of
   // the locked block, kept in the URL so it survives the source swap.
-  // `sq` (the sessions search) and `win` (the time window) are here because
-  // they decide which sessions the explorer can select at all.
   const [sampleQuery, setSampleQuery] = useQueryStates({
     demo: parseAsString,
     sample: parseAsString,
@@ -89,6 +89,11 @@ export function App() {
   const [windowKey, setWindowKey] = useQueryState(
     'win',
     parseAsStringEnum<WindowKey>([...WINDOW_KEYS]).withDefault('all')
+  );
+  // Which page: the session explorer or the cross-session Insights view.
+  const [tab, setTab] = useQueryState(
+    'tab',
+    parseAsStringEnum(['sessions', 'insights'] as const).withDefault('sessions')
   );
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -171,9 +176,18 @@ export function App() {
           mode={mode}
           source={source}
           picker={picker}
-          onBack={openedFiles ? () => setShowFiles(false) : undefined}
+          onBack={
+            openedFiles
+              ? () => {
+                  setShowFiles(false);
+                  void setSampleQuery({ session: null });
+                }
+              : undefined
+          }
           baseLabel={baseSource.label}
           account={mode === 'server' ? <AccountChip base={base} state={account.data} /> : null}
+          tab={tab}
+          onTab={(t) => void setTab(t === 'sessions' ? null : t)}
         />
         {mode !== 'probing' ? <PlatformBanner /> : null}
         {mode === 'demo' && source === demo ? (
@@ -186,6 +200,12 @@ export function App() {
         {notice ? <OpenNotice result={notice} onClose={() => setNotice(null)} /> : null}
         {mode === 'probing' ? (
           <SessionExplorerSkeleton />
+        ) : tab === 'insights' ? (
+          <InsightsView
+            key={`insights:${source.id}`}
+            windowKey={windowKey}
+            onWindowChange={(k) => void setWindowKey(k === 'all' ? null : k)}
+          />
         ) : (
           <SessionExplorer
             key={`explorer:${source.id}`}
@@ -209,6 +229,8 @@ function AppBar({
   onBack,
   baseLabel,
   account,
+  tab,
+  onTab,
 }: {
   mode: Mode;
   source: SessionMapSource;
@@ -216,12 +238,14 @@ function AppBar({
   onBack?: () => void;
   baseLabel: string;
   account: ReactNode;
+  tab: 'sessions' | 'insights';
+  onTab: (tab: 'sessions' | 'insights') => void;
 }) {
   const { theme, toggle } = useTheme();
   const status = useSessionExplorerStatus();
   const count = mode === 'probing' ? null : (status.data?.mapCount ?? null);
   return (
-    <header className="flex shrink-0 items-center gap-3">
+    <header className="flex shrink-0 flex-wrap items-center gap-3">
       <div className="flex items-center gap-2">
         <img src="entelligence-logo.svg" alt="" className="size-7" />
         <span className="ds-text-body-sm-semibold text-ds-text-darker">agentplay</span>
@@ -232,6 +256,19 @@ function AppBar({
           {count != null ? ` · ${count} ${count === 1 ? 'map' : 'maps'}` : ''}
           {status.data?.scanning ? ' · scanning…' : ''}
         </Badge>
+      ) : null}
+      {mode !== 'probing' ? (
+        <ToggleGroup
+          value={[tab]}
+          onValueChange={(v: unknown[]) => {
+            const next = v.find((x): x is 'sessions' | 'insights' => x === 'sessions' || x === 'insights');
+            if (next) onTab(next);
+          }}
+          aria-label="View"
+        >
+          <ToggleGroupItem value="sessions">Sessions</ToggleGroupItem>
+          <ToggleGroupItem value="insights">Insights</ToggleGroupItem>
+        </ToggleGroup>
       ) : null}
       {onBack ? (
         <Button variant="ghost" size="sm" className="h-7 px-2 text-ds-text-subtle" onClick={onBack}>

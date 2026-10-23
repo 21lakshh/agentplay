@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   LIST_FILTER_PARAMS,
@@ -20,12 +22,14 @@ describe('the query "See sample" pushes', () => {
     expect(SAMPLE_QUERY.sample).toBe('1');
   });
 
+  it('names a session the bundled sessions have', () => {
+    const index = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../../public/demo/index.json'), 'utf8')
+    ) as { sessions: { sessionId: string }[] };
+    expect(index.sessions.map((s) => s.sessionId)).toContain(SAMPLE_SESSION_ID);
+  });
+
   it('clears every filter the sessions list applies', () => {
-    // The explorer selects the first row of the FILTERED list when the
-    // session it is asked for is not in it. A search or a time window that
-    // excludes the sample therefore landed the reader on a different
-    // session, with the preview still blurred. A new list
-    // filter has to be cleared here too, which is what this asserts.
     for (const key of LIST_FILTER_PARAMS)
       expect(SAMPLE_QUERY[key], `${key} is cleared`).toBeNull();
     expect([...LIST_FILTER_PARAMS]).toEqual(['sq', 'win']);
