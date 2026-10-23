@@ -2,6 +2,7 @@ import {
   sessionExplorerSessionSchema,
   type SessionExplorerSession,
 } from '@/core/schema';
+import { insightsStatsSchema } from '@/core/insights';
 import { SessionExplorerError } from './errors';
 import { listRows } from './memoryListing';
 import { parseMapBytes } from './parse';
@@ -17,13 +18,20 @@ type DemoRow = SessionExplorerSession & { file?: string };
  */
 export function demoSource(root = 'demo/'): SessionMapSource {
   const base = new URL(root, document.baseURI);
+  let raw: Promise<{ sessions?: unknown[] }> | null = null;
   let index: Promise<DemoRow[]> | null = null;
-  const load = () =>
-    (index ??= fetch(new URL('index.json', base))
+  const loadRaw = () =>
+    (raw ??= fetch(new URL('index.json', base))
       .then((r) => {
         if (!r.ok) throw new SessionExplorerError('demo index missing', 'not_found');
         return r.json() as Promise<{ sessions?: unknown[] }>;
       })
+      .catch((err) => {
+        raw = null;
+        throw err;
+      }));
+  const load = () =>
+    (index ??= loadRaw()
       .then((body) =>
         (body.sessions ?? []).map((raw) => {
           const row = sessionExplorerSessionSchema.parse(raw) as DemoRow;
@@ -57,6 +65,16 @@ export function demoSource(root = 'demo/'): SessionMapSource {
             : { sessionId: id, status: 'not_found' as const };
         }),
       };
+    },
+    async stats(range) {
+      // The demo index rows carry the same facts `/api/stats` serves
+      // (`scripts/demo_facts.py`); the row schema above drops them, so read raw.
+      const body = await loadRaw();
+      const rows = (body.sessions ?? []).filter((r) => {
+        const day = (r as { sessionDate?: string | null }).sessionDate ?? '';
+        return (!range.from || day >= range.from) && (!range.to || day <= range.to);
+      });
+      return insightsStatsSchema.parse({ sessions: rows });
     },
     async fetchMap(meta) {
       const r = await fetch(meta.url);

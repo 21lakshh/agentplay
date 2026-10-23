@@ -59,7 +59,7 @@ def test_commands_files_prompt_and_verify():
     assert f["files"] == {"acme/api:src/a.ts": {"hits": 3, "reads": 2, "edits": 1}}  # untouched files dropped
     assert f["firstPromptChars"] == 420 and f["userTurns"] == 2
     assert f["edited"] is True and f["verifyAfterLastEdit"] is True
-    assert f["errorsBySource"] == {"tool": 1}
+    assert f["errorsBySource"] == {"tool": {"exit_code": 1}}
 
 
 def test_waste_charges_each_request_once_in_bucket_order():

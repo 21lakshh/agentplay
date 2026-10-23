@@ -106,8 +106,12 @@
      "overloaded": 1
     },
     "errorsBySource": {
-     "tool": 1,
-     "llm": 1
+     "tool": {
+      "exit_code": 1
+     },
+     "llm": {
+      "overloaded": 1
+     }
     },
     "files": {
      "acme/api:README.md": {
@@ -275,7 +279,9 @@
      "exit_code": 2
     },
     "errorsBySource": {
-     "tool": 2
+     "tool": {
+      "exit_code": 2
+     }
     },
     "files": {
      "acme/web:src/lib/formatDate.ts": {
@@ -359,7 +365,7 @@
     "prsCreated": 0,
     "prsMerged": 0,
     "costUsd": 0.0,
-    "hasCost": true,
+    "hasCost": false,
     "tokens": {
      "in": 0,
      "cw": 0,

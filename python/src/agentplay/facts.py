@@ -174,11 +174,12 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
     last_edit = max((e["seq"] for e in edits), default=None)
     users = [e for e in evs if e["kind"] == "user" and e.get("agent") == "main"]
 
-    by_source: dict[str, int] = {}
+    by_source: dict[str, dict[str, int]] = {}
     for e in evs:
         if e.get("err"):
-            src = _error_source(e)
-            by_source[src] = by_source.get(src, 0) + 1
+            classes = by_source.setdefault(_error_source(e), {})
+            cls = str(e.get("errClass") or "other")
+            classes[cls] = classes.get(cls, 0) + 1
 
     return {
         "outcome": outcome,
@@ -186,7 +187,8 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
         "prsCreated": int(t.get("prsCreated") or 0),
         "prsMerged": int(t.get("prsMerged") or 0),
         "costUsd": float(t.get("costUsd") or 0.0),
-        "hasCost": any("cost" in e for e in llm),
+        # Cursor writes requests with no usable cost; a zero total means "unknown", not "free".
+        "hasCost": float(t.get("costUsd") or 0.0) > 0,
         "tokens": {
             "in": sum(int(e.get("in") or 0) for e in llm),
             "cw": sum(int(e.get("cw") or 0) for e in llm),

@@ -244,3 +244,23 @@ export function useHookDetail(sessionId: string, uuid: string | undefined) {
     staleTime: Infinity,
   });
 }
+
+/** Per-session facts for the Insights view over a date range. Refetches when
+ * a background scan adds maps, like the session list. Disabled on a source
+ * without `stats` (opened files). */
+export function useInsightsStats(range: { from?: string; to?: string }) {
+  const source = useSessionMapSource();
+  const status = useSessionExplorerStatus();
+  const stamp = status.data ? `${status.data.mapCount}:${status.data.scanning}` : '';
+  return useQuery({
+    queryKey: ['insightsStats', source.id, range.from ?? '', range.to ?? '', stamp] as const,
+    queryFn: () => {
+      if (!source.stats) throw new SessionExplorerError('Insights need the local store', 'unsupported');
+      return source.stats(range);
+    },
+    enabled: !!source.stats,
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+}

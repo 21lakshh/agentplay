@@ -7,6 +7,7 @@ import type {
   SessionExplorerStatus,
   SessionMap,
 } from '@/core/schema';
+import type { InsightsStats } from '@/core/insights';
 
 export interface SessionsParams {
   /** inclusive UTC `YYYY-MM-DD` */
@@ -50,6 +51,12 @@ export interface SessionMapSource {
    * to the recording machine can answer, and it rejects otherwise.
    */
   hookDetail?(sessionId: string, uuid: string): Promise<HookDetailResponse>;
+  /**
+   * Optional. Per-session facts for the Insights view, for root sessions in
+   * the range (inclusive UTC `YYYY-MM-DD`; omitted = all time). Absent on a
+   * source with no precomputed facts (opened files).
+   */
+  stats?(range: { from?: string; to?: string }): Promise<InsightsStats>;
 }
 
 /** Max ids per `maps()` call. */
