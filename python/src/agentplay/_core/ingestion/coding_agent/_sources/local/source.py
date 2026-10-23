@@ -1136,10 +1136,11 @@ _GEMINI_SESSION_CONTEXT_PREFIX = "<session_context>"
 
 
 def _gemini_user_counts(content: object) -> bool:
-    """True unless every text part is the CLI's synthetic `<session_context>`.
+    """True when a `user` record carries prompt text, plus tool-result records.
 
-    A tool-result `user` record has no text parts and still counts. A record
-    that is only the context block does not: the parser opens no turn for it.
+    Empty text and the CLI's `<session_context>` block are ignored, the same
+    filter as `parsers.gemini._user_prompt` (`text` must be non-empty and not
+    that prefix). A tool-result record has no text parts and still counts.
     """
     if isinstance(content, str):
         texts = [content]
@@ -1153,7 +1154,7 @@ def _gemini_user_counts(content: object) -> bool:
         return True
     if not texts:
         return True
-    return any(not text.lstrip().startswith(_GEMINI_SESSION_CONTEXT_PREFIX) for text in texts)
+    return any(text and not text.lstrip().startswith(_GEMINI_SESSION_CONTEXT_PREFIX) for text in texts)
 
 
 def _gemini_has_messages(head: bytes) -> bool:

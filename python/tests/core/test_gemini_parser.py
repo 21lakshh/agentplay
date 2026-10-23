@@ -431,6 +431,24 @@ def test_context_only_session_is_skipped_as_empty_events(tmp_path):
     assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
 
 
+def test_empty_text_user_record_is_skipped_as_empty_events(tmp_path):
+    home = _gemini_home(tmp_path)
+    chats = home / "tmp" / "project" / "chats"
+    # `""` is dropped by `_user_prompt` (`if text`). Whitespace is not.
+    (chats / "session-empty-text.jsonl").write_bytes(
+        _session(_context_user("u0", "", ""), session_id="empty-text")
+    )
+    (chats / "session-whitespace-prompt.jsonl").write_bytes(
+        _session(_context_user("u1", "   "), session_id="whitespace-prompt")
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[home])
+    index = source._build_index()
+    assert "local:gemini-cli:empty-text" not in index
+    assert "local:gemini-cli:whitespace-prompt" in index
+    # Header-only file from `_gemini_home`, plus the empty-text session.
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
+
+
 def test_local_source_indexes_gemini_sessions(tmp_path):
     source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[_gemini_home(tmp_path)])
     index = source._build_index()
