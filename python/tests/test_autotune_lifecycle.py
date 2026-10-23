@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shlex
 import shutil
 import subprocess
 from typing import Any
@@ -104,8 +106,15 @@ def test_autotune_never_removes_a_change_the_person_approved(tuned):
     assert "pytest" in (root / ".claude" / "settings.json").read_text()
 
 
+def _fake_home(monkeypatch: pytest.MonkeyPatch, path: Any) -> None:
+    # Path.home() reads USERPROFILE on Windows, HOME elsewhere; set both so a test
+    # never touches the real ~/.claude/settings.json.
+    monkeypatch.setenv("HOME", str(path))
+    monkeypatch.setenv("USERPROFILE", str(path))
+
+
 def test_hook_install_writes_through_a_symlinked_settings_file(tmp_path, monkeypatch):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _fake_home(monkeypatch, tmp_path)
     real = tmp_path / "dotfiles" / "settings.json"
     real.parent.mkdir()
     real.write_text(json.dumps({"theme": "dark"}))
@@ -119,9 +128,10 @@ def test_hook_install_writes_through_a_symlinked_settings_file(tmp_path, monkeyp
     assert link.is_symlink() and not autotune.hook_installed()
     assert json.loads(real.read_text())["theme"] == "dark"
 
+
 @pytest.mark.parametrize("settings", [{"hooks": None}, {"hooks": []}, {"hooks": {"SessionStart": "x"}}, [1]])
 def test_a_hand_broken_settings_file_is_reported_not_crashed_or_rewritten(tmp_path, monkeypatch, settings):
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _fake_home(monkeypatch, tmp_path)
     path = tmp_path / ".claude" / "settings.json"
     path.parent.mkdir()
     path.write_text(json.dumps(settings))
@@ -142,7 +152,8 @@ def test_cron_line_names_an_absolute_command(tmp_path, monkeypatch, capsys):
         action, at, repo = "on", "09:30", []
 
     assert cli.cmd_autotune(A()) == 0
-    assert "30 9 * * * /opt/tools/bin/agentplay autotune run --daily --quiet" in capsys.readouterr().out
+    exe = shlex.quote(os.path.abspath("/opt/tools/bin/agentplay"))  # a drive-qualified path on Windows
+    assert f"30 9 * * * {exe} autotune run --daily --quiet" in capsys.readouterr().out
 
 
 def test_fix_variant_out_of_range_is_an_error(tmp_path, monkeypatch, capsys):
