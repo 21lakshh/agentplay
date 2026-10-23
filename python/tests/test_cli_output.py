@@ -237,3 +237,17 @@ def test_list_empty_message(list_store, capsys, filtered):
     assert cli.main(["list", *flags]) == 0
     expected = "No sessions match these filters." if filtered else "No maps yet. Run `agentplay build`."
     assert capsys.readouterr().out.strip() == expected
+
+
+@pytest.mark.parametrize(("started", "expected"), [
+    ("2026-10-20T00:00:00Z", ["session"]),
+    ("2026-09-01T00:00:00Z", []),
+])
+def test_list_uses_start_time_for_zero_source_mtime(list_store, capsys, started, expected):
+    list_store.index.clear()
+    list_store.index["session"] = {
+        "sessionId": "session", "agentTool": "codex", "startedAt": started, "sourceMtime": 0.0,
+    }
+    list_store.save_index()
+    assert cli.main(["list", "--since", "2026-10-16", "--json"]) == 0
+    assert [r["sessionId"] for r in json.loads(capsys.readouterr().out)] == expected

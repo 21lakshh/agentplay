@@ -248,9 +248,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         if agents is not None and row.get("agentTool") not in agents:
             continue
         if since is not None:
-            # Imported maps have no transcript mtime; use their session start.
+            # Imported maps and discovery's zero sentinel have no transcript mtime.
             changed = row.get("sourceMtime")
-            if changed is None:
+            if changed is None or changed == 0:
                 try:
                     started = datetime.fromisoformat(row.get("startedAt") or "")
                     changed = (started if started.tzinfo else started.replace(tzinfo=UTC)).timestamp()
@@ -384,7 +384,7 @@ def parser() -> argparse.ArgumentParser:
 
     ls = sub.add_parser("list", parents=[common], help="list built sessions")
     ls.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
-    ls.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); imported maps use start time")
+    ls.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD); missing modification times use start time")
     ls.add_argument("--limit", type=int)
     ls.add_argument("--json", action="store_true")
     ls.set_defaults(fn=cmd_list)
