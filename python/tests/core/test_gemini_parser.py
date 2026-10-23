@@ -21,6 +21,7 @@ import pytest
 
 from agentplay import builder, discover
 from agentplay._core.code_authorship import extract_edit_evidence
+from agentplay._core.ingestion.coding_agent._sources.local import source as local_source
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -493,6 +494,94 @@ def test_prompt_past_the_head_is_indexed_and_empty_sessions_are_skipped(tmp_path
     assert "local:gemini-cli:context-only" not in index
     assert "local:gemini-cli:empty-text" not in index
     assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
+
+
+def _chats(tmp_path: Path) -> Path:
+    home = tmp_path / ".gemini"
+    chats = home / "tmp" / "project" / "chats"
+    chats.mkdir(parents=True)
+    (chats.parent / ".project_root").write_text(FIXTURE_ROOT, encoding="utf-8")
+    return chats
+
+
+def _user_record(msg_id: str, content: object) -> dict:
+    return {"id": msg_id, "timestamp": "2026-10-23T07:02:00Z", "type": "user", "content": content}
+
+
+def test_non_prompt_user_content_is_skipped_as_empty_events(tmp_path):
+    # Same shapes `_user_prompt` refuses: a non-text value, empty text, and
+    # the CLI's context block. Each file is only that record.
+    chats = _chats(tmp_path)
+    context = "<session_context>\nCONTEXT-PLACEHOLDER\n</session_context>"
+    cases = {
+        "number": 5,
+        "blank": "",
+        "empty-part": [{"text": ""}],
+        "context": [{"text": context}],
+    }
+    for session_id, content in cases.items():
+        (chats / f"session-{session_id}.jsonl").write_bytes(
+            _session(_user_record("u0", content), session_id=session_id)
+        )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[chats.parents[2]])
+    index = source._build_index()
+    assert set(index) == set()
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == len(cases)
+
+
+def test_deeply_nested_json_line_does_not_abort_discovery(tmp_path, monkeypatch):
+    nested = b'{"a":' * 1200 + b"0" + b"}" * 1200
+    try:
+        json.loads(nested)
+    except RecursionError:
+        pass
+    else:
+        # Python 3.15 parses this depth. Older interpreters raise here, which
+        # is the failure the scan has to survive, so reproduce it.
+        real_loads = local_source.json.loads
+
+        def loads(raw, *args, **kwargs):
+            text = raw.decode("utf-8", "replace") if isinstance(raw, (bytes, bytearray)) else raw
+            if isinstance(text, str) and text.startswith('{"a":' * 40):
+                raise RecursionError("maximum recursion depth exceeded")
+            return real_loads(raw, *args, **kwargs)
+
+        monkeypatch.setattr(local_source.json, "loads", loads)
+
+    chats = _chats(tmp_path)
+    prompt = _user_record("u1", [{"text": "PROMPT-PLACEHOLDER-1"}])
+    prompt_line = json.dumps(prompt).encode() + b"\n"
+    header = json.dumps(
+        {"sessionId": "nested-then-prompt", "projectHash": "h", "startTime": "2026-10-23T07:00:00Z", "kind": "main"}
+    ).encode() + b"\n"
+    (chats / "session-nested-then-prompt.jsonl").write_bytes(header + nested + b"\n" + prompt_line)
+    only = header.replace(b"nested-then-prompt", b"nested-only")
+    (chats / "session-nested-only.jsonl").write_bytes(only + nested + b"\n")
+
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[chats.parents[2]])
+    index = source._build_index()
+    assert "local:gemini-cli:nested-then-prompt" in index
+    assert "local:gemini-cli:nested-only" not in index
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 1
+
+
+def test_oversized_transcript_is_skipped_as_too_large(tmp_path, monkeypatch):
+    # The real cap is 512MB. Lower it so the test file is over the cap without
+    # writing one. The prompt sits at the start, so a scan that ignored the
+    # size and stopped at the cap would still index this session.
+    monkeypatch.setattr(local_source, "MAX_SOURCE_BYTES", 800)
+    chats = _chats(tmp_path)
+    prompt = _user_record("u1", [{"text": "PROMPT-PLACEHOLDER-1"}])
+    (chats / "session-small.jsonl").write_bytes(_session(prompt, session_id="small"))
+    huge = _session(prompt, {"id": "pad", "type": "info", "content": "x" * 2000}, session_id="huge")
+    assert len(huge) > 800
+    (chats / "session-huge.jsonl").write_bytes(huge)
+
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[chats.parents[2]])
+    index = source._build_index()
+    assert "local:gemini-cli:small" in index
+    assert "local:gemini-cli:huge" not in index
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["too_large"] == 1
 
 
 def test_local_source_indexes_gemini_sessions(tmp_path):

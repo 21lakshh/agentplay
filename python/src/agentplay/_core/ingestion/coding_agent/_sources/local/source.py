@@ -24,6 +24,7 @@ from agentplay._core.ingestion.coding_agent._sources._base import (
     MAX_SESSION_BYTES,
     OversizedSessionError,
 )
+from agentplay.discover import MAX_SOURCE_BYTES
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -36,6 +37,9 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_gemini,
     parse_kiro,
     parse_opencode,
+)
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.gemini import (
+    _user_prompt as _gemini_user_prompt,
 )
 from agentplay._core.ingestion.coding_agent.spans import DiscoveredSession, SpanData
 
@@ -1130,52 +1134,35 @@ def _gemini_header(head: bytes) -> dict | None:
     return None
 
 
-# Injected as the first user message of every Gemini CLI session. Not a prompt.
-# The same prefix `parsers.gemini._user_prompt` ignores.
-_GEMINI_SESSION_CONTEXT_PREFIX = "<session_context>"
-
-
-def _gemini_user_counts(content: object) -> bool:
-    """True when a `user` record carries prompt text, plus tool-result records.
-
-    Empty text and the CLI's `<session_context>` block are ignored, the same
-    filter as `parsers.gemini._user_prompt` (`text` must be non-empty and not
-    that prefix). A tool-result record has no text parts and still counts.
-    """
-    if isinstance(content, str):
-        texts = [content]
-    elif isinstance(content, list):
-        texts = [
-            part["text"]
-            for part in content
-            if isinstance(part, dict) and isinstance(part.get("text"), str)
-        ]
-    else:
-        return True
-    if not texts:
-        return True
-    return any(text and not text.lstrip().startswith(_GEMINI_SESSION_CONTEXT_PREFIX) for text in texts)
-
-
 def _gemini_has_messages(path: Path) -> bool:
     """True when the file holds a real prompt or a `gemini` message.
 
     Streams one line at a time and stops at the first qualifying record, so a
-    prompt that sits past `_read_head` (after a multi-MB `<session_context>`
-    line) is still found. A file of only the header, that context block, or
-    empty user text is skipped at EOF, same as `_kiro_event_count == 0`.
-    The whole transcript is never held at once.
+    prompt that sits past `_read_head` is still found. Reads at most
+    ``MAX_SOURCE_BYTES``. A file of only the header or user content
+    ``_user_prompt`` rejects is skipped at EOF. A ``RecursionError`` from a
+    deeply nested record skips that line instead of aborting the index.
     """
+    remaining = MAX_SOURCE_BYTES
     with path.open("rb") as handle:
-        for line in handle:
+        while remaining > 0:
+            line = handle.readline(remaining)
+            if not line:
+                break
+            remaining -= len(line)
+            # `readline(n)` cuts a line at n bytes. A partial record is not JSON.
+            if remaining == 0 and not line.endswith(b"\n"):
+                break
             try:
                 obj = json.loads(line)
-            except ValueError:
+            except (ValueError, RecursionError):
                 continue
             if not isinstance(obj, dict):
                 continue
             kind = obj.get("type")
-            if kind == "gemini" or (kind == "user" and _gemini_user_counts(obj.get("content"))):
+            if kind == "gemini" or (
+                kind == "user" and _gemini_user_prompt(obj.get("content")) is not None
+            ):
                 return True
     return False
 
@@ -1945,6 +1932,12 @@ class LocalSource:
         size = jsonl_file.stat().st_size
         if size == 0:
             self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+        # `build_map` refuses the same cap with SkipSession("too_large"). Skip
+        # here, before any read, so discovery does not allocate the file.
+        if size > MAX_SOURCE_BYTES:
+            logger.debug("gemini-cli: %s exceeds the source byte cap; session skipped", jsonl_file)
+            self._record_discovery("gemini-cli", "too_large")
             return None
         try:
             head = _read_head(jsonl_file, stop_when=_agent_detected)
