@@ -125,6 +125,19 @@ describe('playbackClock', () => {
     expect(SPEEDS[s.speedIdx]).toBe(16);
     expect(clocked(s).frames(1000, 1000 + MS_PER_EVENT).state.p).toBe(26);
   });
+
+  it('keeps partial progress across a speed change when given the same carry', () => {
+    const carry = { last: 0, acc: 0 };
+    const actions: PlaybackAction[] = [];
+    // Half an event at 1x, then a 4x clock picks up where it left off.
+    const slow = playbackClock(0, (a) => actions.push(a), carry);
+    slow(1000);
+    slow(1000 + MS_PER_EVENT / 2);
+    expect(actions).toEqual([]);
+    const fast = playbackClock(1, (a) => actions.push(a), carry);
+    fast(1000 + MS_PER_EVENT / 2 + event4x / 2);
+    expect(actions).toEqual([{ type: 'advance', by: 1 }]);
+  });
 });
 
 describe('replayKeyAction', () => {

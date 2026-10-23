@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type KeyboardEvent,
 } from 'react';
 import type { SessionMap, SessionMapEvent } from '@/core/schema';
@@ -64,9 +65,15 @@ export function usePlaybackWindow(map: SessionMap) {
     })
   );
 
+  // Progress survives a speed change but not a pause, seek or step (all of
+  // which stop playback), so this resets only when playing flips.
+  const carry = useRef({ last: 0, acc: 0 });
+  useEffect(() => {
+    carry.current = { last: 0, acc: 0 };
+  }, [pb.playing]);
   useEffect(() => {
     if (!pb.playing) return;
-    const tick = playbackClock(pb.speedIdx, dispatch);
+    const tick = playbackClock(pb.speedIdx, dispatch, carry.current);
     let raf = 0;
     const frame = (t: number) => {
       tick(t);

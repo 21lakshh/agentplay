@@ -76,19 +76,24 @@ export function playbackReducer(
   }
 }
 
+/** The clock's progress; pass the same one to a new clock to keep it across a speed change. */
+export interface ClockCarry {
+  last: number;
+  acc: number;
+}
+
 export function playbackClock(
   speedIdx: number,
-  dispatch: (a: PlaybackAction) => void
+  dispatch: (a: PlaybackAction) => void,
+  carry: ClockCarry = { last: 0, acc: 0 }
 ) {
-  let last = 0;
-  let acc = 0;
   return (t: number) => {
-    const dt = last ? Math.min(t - last, MAX_FRAME_MS) : 0;
-    last = t;
-    acc += (dt * SPEEDS[speedIdx]) / MS_PER_EVENT;
-    const by = Math.floor(acc);
+    const dt = carry.last ? Math.min(t - carry.last, MAX_FRAME_MS) : 0;
+    carry.last = t;
+    carry.acc += (dt * SPEEDS[speedIdx]) / MS_PER_EVENT;
+    const by = Math.floor(carry.acc);
     if (!by) return;
-    acc -= by;
+    carry.acc -= by;
     dispatch({ type: 'advance', by });
   };
 }
