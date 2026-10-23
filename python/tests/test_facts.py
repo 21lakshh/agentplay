@@ -55,7 +55,8 @@ def test_commands_files_prompt_and_verify():
         _ev(7, "user", chars=30),
     ])
     f = facts.compute(doc)
-    assert f["cmd"]["pytest"] == {"calls": 3, "fails": 1, "retries": 1, "byClass": {"exit_code": 1}}
+    assert f["cmd"]["pytest"] == {"calls": 3, "fails": 1, "retries": 1, "byClass": {"exit_code": 1},
+                                  "verify": True, "outBytes": 0}
     assert f["files"] == {"acme/api:src/a.ts": {"hits": 3, "reads": 2, "edits": 1}}  # untouched files dropped
     assert f["firstPromptChars"] == 420 and f["userTurns"] == 2
     assert f["edited"] is True and f["verifyAfterLastEdit"] is True

@@ -1,4 +1,4 @@
-"""Command line: ``agentplay [view|build|list|export|import|agents]``.
+"""Command line: ``agentplay [view|build|list|export|import|agents|fix|repos|autotune]``.
 
 Run with no arguments to build maps for your sessions and open the viewer.
 """
@@ -324,6 +324,123 @@ def cmd_agents(_args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- parser
+def _health_fixes(st: Store, days: int = 30) -> list[dict]:
+    from . import autotune, health
+
+    since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
+    return health.fixes(autotune.root_rows(st, since=since))
+
+
+def cmd_fix(args: argparse.Namespace) -> int:
+    from . import fixes
+
+    st = Store()
+    items = _health_fixes(st)
+    if args.action == "list":
+        if not items:
+            print("No fixes: nothing specific stands out in the last 30 days.")
+        applied = {e["fixId"] for e in fixes.active(st.base)}
+        for n, fx in enumerate(items, 1):
+            mark = " (applied)" if fx["id"] in applied else ""
+            pts = f"+{fx['points']:.1f} pts" if fx["points"] else "  0 pts"
+            print(f"{n:>2}. {pts}  {fx['title']}{mark}")
+            print(f"    {fx['pattern']}")
+        return 0
+    if args.action == "undo":
+        try:
+            entry = fixes.undo(st.base, args.target)
+        except fixes.FixError as exc:
+            print(f"agentplay: {exc.message}", file=sys.stderr)
+            return 1
+        print(f"Undid: {entry['title']} ({entry['repo']}, {entry['file']}).")
+        return 0
+    try:
+        fx = items[int(args.target) - 1]
+    except (ValueError, IndexError):
+        print("agentplay: give the number from `agentplay fix list`.", file=sys.stderr)
+        return 1
+    if not fx["actions"]:
+        print(f"agentplay: {fx['title']}: nothing to write; it names an integration to fix by hand.", file=sys.stderr)
+        return 1
+    action = fx["actions"][args.variant]
+    try:
+        entry = fixes.apply(st.base, fx, action, rel=args.to, source="cli")
+    except fixes.FixError as exc:
+        print(f"agentplay: {exc.message}", file=sys.stderr)
+        return 1
+    print(f"Wrote {entry['file']} in {entry['repo']}: {fx['title']}. Undo with `agentplay fix undo {entry['id']}`.")
+    return 0
+
+
+def cmd_repos(args: argparse.Namespace) -> int:
+    from . import fixes
+
+    st = Store()
+    try:
+        if args.action == "grant":
+            print(f"agentplay can now write fixes to {fixes.grant(st.base, args.repo, args.path)}.")
+        elif args.action == "revoke":
+            fixes.revoke(st.base, args.repo)
+            print(f"agentplay will no longer write to {args.repo}.")
+        else:
+            for r in fixes.status(st.base)["repos"]:
+                print(f"{'●' if r['granted'] else '○'} {r['name']}  {r['root'] or '(no checkout on this machine)'}")
+    except fixes.FixError as exc:
+        print(f"agentplay: {exc.message}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_autotune(args: argparse.Namespace) -> int:
+    from . import autotune, fixes
+
+    st = Store()
+    try:
+        if args.action == "on":
+            for repo in args.repo or [r["name"] for r in fixes.status(st.base)["repos"] if r["granted"]]:
+                autotune.set_repo(st.base, repo, enabled=True)
+            cfg = autotune.config(st.base)
+            if args.at:
+                cfg["when"] = args.at
+                autotune.save(st.base, cfg)
+                print(f"Add this to your crontab (crontab -e) to run daily at {args.at}:")
+                hh, mm = args.at.split(":")
+                print(f"  {int(mm)} {int(hh)} * * * {autotune.HOOK_COMMAND}")
+            else:
+                path = autotune.install_hook()
+                cfg["when"] = "session-start"
+                autotune.save(st.base, cfg)
+                print(f"Autotune runs at most once a day, when a Claude Code session starts ({path}).")
+        elif args.action == "off":
+            for repo in args.repo or list(autotune.config(st.base)["repos"]):
+                autotune.set_repo(st.base, repo, enabled=False)
+            if not args.repo:
+                autotune.uninstall_hook()
+            print("Autotune is off.")
+        elif args.action == "run":
+            res = autotune.run(st, force=not args.daily)
+            if not args.quiet:
+                if res.get("skipped"):
+                    print(f"Autotune: {res['skipped']}.")
+                for k in ("applied", "queued", "retired"):
+                    for title in res[k]:
+                        print(f"{k}: {title}")
+        elif args.action == "undo":
+            entry = fixes.undo(st.base, args.repo[0] if args.repo else "")
+            print(f"Undid: {entry['title']}.")
+        else:
+            s = autotune.status(st)
+            print(f"Runs: {s['when']}; last run {s['lastRun'] or 'never'}; hook {'installed' if s['hookInstalled'] else 'not installed'}.")
+            for r in s["repos"]:
+                print(f"{'●' if r.get('enabled') and r['granted'] else '○'} {r['name']}")
+            for p in s["pending"]:
+                print(f"waiting: {p['title']} ({p['repo']}) - approve it in the viewer")
+    except fixes.FixError as exc:
+        print(f"agentplay: {exc.message}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _build_flags(p: argparse.ArgumentParser) -> None:
     p.add_argument("--since", help="only sessions changed since (30d, 12h, 2w, YYYY-MM-DD)")
     p.add_argument("--agents", help=f"comma-separated subset of: {', '.join(discover.AGENTS)}")
@@ -376,6 +493,27 @@ def parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("agents", parents=[common], help="show which agents were found on this machine")
     a.set_defaults(fn=cmd_agents)
+
+    fx = sub.add_parser("fix", parents=[common], help="list, apply or undo Run health fixes")
+    fx.add_argument("action", choices=["list", "apply", "undo"])
+    fx.add_argument("target", nargs="?", default="", help="fix number (apply) or entry id (undo)")
+    fx.add_argument("--variant", type=int, default=0, help="which of a fix's actions to apply (default: the first)")
+    fx.add_argument("--to", choices=["CLAUDE.md", "CLAUDE.local.md"], help="instruction file to write to")
+    fx.set_defaults(fn=cmd_fix)
+
+    rp = sub.add_parser("repos", parents=[common], help="choose which repos agentplay may write fixes to")
+    rp.add_argument("action", choices=["list", "grant", "revoke"], nargs="?", default="list")
+    rp.add_argument("repo", nargs="?", default="")
+    rp.add_argument("--path", help="the checkout to use (default: the one builds recorded)")
+    rp.set_defaults(fn=cmd_repos)
+
+    at = sub.add_parser("autotune", parents=[common], help="apply fixes daily and retire the ones that don't help")
+    at.add_argument("action", choices=["on", "off", "run", "status", "undo"], nargs="?", default="status")
+    at.add_argument("--repo", action="append", help="repo name (repeatable; default: every granted repo)")
+    at.add_argument("--at", help="run daily at HH:MM from cron instead of on session start")
+    at.add_argument("--daily", action="store_true", help="skip if it already ran today")
+    at.add_argument("--quiet", action="store_true")
+    at.set_defaults(fn=cmd_autotune)
     return ap
 
 

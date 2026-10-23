@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import pytest
 
 from agentplay import builder as sm
-from agentplay import facts
+from agentplay import facts, search
 
 SECRET_PROMPT = "please fix the SECRET-PROMPT-TEXT in billing"
 SECRET_ARG = "--token=hunter2-SECRET-ARG"
@@ -230,8 +230,8 @@ def test_acompact_snapshot_is_not_a_subagent_lane(transcript):
 
 def test_builder_never_leaks_free_text(transcript):
     doc = sm.build_claude_code_map(transcript)
-    # Session facts (the Insights summary on the index row) are held to the same contract.
-    raw = json.dumps(doc) + json.dumps(facts.compute(doc))
+    # Session facts and search postings are held to the same contract as the map.
+    raw = json.dumps(doc) + json.dumps(facts.compute(doc)) + json.dumps(search.postings(doc))
     for secret in (
         "SECRET-PROMPT-TEXT",
         "hunter2",

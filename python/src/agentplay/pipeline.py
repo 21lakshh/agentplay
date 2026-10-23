@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import __version__, builder, discover, facts
+from . import __version__, builder, discover, facts, fixes, search
 from .store import Store
 
 logger = logging.getLogger("agentplay.pipeline")
@@ -204,6 +204,9 @@ def build_all(
     # first scan can take minutes, so the open viewer fills in as maps land.
     last_save = time.monotonic()
     pending = False
+    # Shared across builds, so each checkout is resolved once and its root can
+    # be recorded (locally, in repos.json) for writing fixes later.
+    resolver = builder.RepoResolver()
     for i, c in enumerate(cands):
         if pending and time.monotonic() - last_save >= SAVE_EVERY_S:
             store.save_index()
@@ -217,7 +220,8 @@ def build_all(
                 pending = True
             continue
         try:
-            doc = discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__)
+            doc = discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__,
+                                     resolver=resolver)
         except discover.SkipSession as exc:
             report.skip(str(exc))
             continue
@@ -237,6 +241,13 @@ def build_all(
         report.built += 1
         report.by_agent[c.agent] += 1
     store.save_index()
+    try:
+        # Only names a stored map uses: a checkout merely passed on the way is not recorded.
+        used = {n for r in store.index.values() for n in r.get("repos") or []}
+        fixes.record_roots(store.base, {n: p for n, p in resolver.roots().items() if n in used})
+        search.refresh(store)
+    except OSError as exc:  # the index is what matters; search catches up next run
+        report.errors.append(f"search index: {exc}")
     if progress:
         progress(len(cands), len(cands), "")
     report.seconds = round(time.monotonic() - t0, 2)

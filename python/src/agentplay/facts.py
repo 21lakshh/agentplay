@@ -18,7 +18,7 @@ from typing import Any
 
 from .builder import _NON_CALL_KINDS, _error_source, estimate_cost_usd
 
-FACTS_VERSION = 1
+FACTS_VERSION = 2
 
 # Outcomes whose whole cost counts as abandoned spend. `interrupted` is left
 # out on purpose: stopping an agent is often the right call.
@@ -151,9 +151,12 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
     for e in evs:
         if e["kind"] not in _COMMAND_KINDS:
             continue
-        verb = str(e.get("verb") or e.get("tool") or "?")[:60]
-        c = cmd.setdefault(verb, {"calls": 0, "fails": 0, "retries": 0, "byClass": {}})
+        verb = command_label(e)
+        c = cmd.setdefault(verb, {"calls": 0, "fails": 0, "retries": 0, "byClass": {}, "verify": False, "outBytes": 0})
         c["calls"] += 1
+        c["outBytes"] += int(e.get("outBytes") or 0)
+        if e["kind"] == "verify":
+            c["verify"] = True
         if e.get("retryOf") is not None:
             c["retries"] += 1
         if e.get("err"):
@@ -180,6 +183,22 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
             classes = by_source.setdefault(_error_source(e), {})
             cls = str(e.get("errClass") or "other")
             classes[cls] = classes.get(cls, 0) + 1
+
+    mcp: dict[str, dict[str, int]] = {}
+    hooks: dict[str, int] = {}
+    subagents: dict[str, dict[str, int]] = {}
+    for e in evs:
+        if e["kind"] == "mcp":
+            m = mcp.setdefault(str(e.get("server") or "?")[:60], {"calls": 0, "fails": 0})
+            m["calls"] += 1
+            m["fails"] += int(bool(e.get("err")))
+        elif e.get("err") and _error_source(e) == "hook":
+            name = str(e.get("hook") or e.get("hookEvent") or "hook")[:60]
+            hooks[name] = hooks.get(name, 0) + 1
+        elif e["kind"] == "subagent":
+            sa = subagents.setdefault(str(e.get("subagentType") or "general")[:60], {"launches": 0, "noResult": 0})
+            sa["launches"] += 1
+            sa["noResult"] += int(bool(e.get("err")) and e.get("errClass") in _DEAD_LANE)
 
     return {
         "outcome": outcome,
@@ -212,6 +231,63 @@ def compute(doc: dict[str, Any]) -> dict[str, Any]:
         "stallMs": sum(int(e.get("ms") or 0) for e in evs if e["kind"] == "delay" and e.get("cause") == "stall"),
         "firstPromptChars": int(users[0].get("chars") or 0) if users else 0,
         "userTurns": len(users),
+        "mcp": mcp,
+        "hookFails": hooks,
+        "subagents": subagents,
+        **_explore(evs),
+    }
+
+
+def command_label(e: dict[str, Any]) -> str:
+    """The command a shell event ran, as its verb plus a git or gh action (``git push``, ``gh pr_create``).
+
+    Never arguments: the builder only stores the verb, and a VCS action is
+    a closed vocabulary.
+    """
+    verb = str(e.get("verb") or e.get("tool") or "?")
+    action = (e.get("vcs") or {}).get("action")
+    if action and str(action) not in verb:
+        verb = f"{verb} {action}"
+    return verb[:60]
+
+
+def _explore(evs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Whether the agent read before it edited (main agent only)."""
+    read_first: set[int] = set()
+    edited: dict[int, int] = {}
+    blind = rework = 0
+    steps_to_edit: int | None = None
+    explore = act = 0
+    last_edit_seq: dict[int, int] = {}
+    main = [e for e in evs if e.get("agent") == "main" and e["kind"] not in _NON_CALL_KINDS]
+    for i, e in enumerate(main):
+        if e["kind"] in ("read", "search"):
+            explore += 1
+        elif e["kind"] in ("edit", "exec", "verify"):
+            act += 1
+        for t in e.get("targets") or []:
+            fid = t.get("file")
+            if not isinstance(fid, int):
+                continue
+            if t.get("touch") == "read":
+                read_first.add(fid)
+            elif t.get("touch") == "edit":
+                if steps_to_edit is None:
+                    steps_to_edit = i
+                if fid not in edited and fid not in read_first and t.get("op") != "create":
+                    blind += 1
+                prev = last_edit_seq.get(fid)
+                if e.get("err") or (prev is not None and i - prev <= 5):
+                    rework += 1
+                edited[fid] = edited.get(fid, 0) + 1
+                last_edit_seq[fid] = i
+    return {
+        "explore": explore,
+        "act": act,
+        "editedFiles": len(edited),
+        "blindEdits": blind,
+        "reworkEdits": rework,
+        "stepsToFirstEdit": steps_to_edit,
     }
 
 

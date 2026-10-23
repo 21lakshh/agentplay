@@ -195,6 +195,10 @@ class RepoResolver:
             self._cache[k] = result
         return result
 
+    def roots(self) -> dict[str, str]:
+        """Repo name -> checkout root for every repo resolved so far (local use only)."""
+        return {name: root for v in self._cache.values() if v for root, name, _ in [v]}
+
     @staticmethod
     def _remote(root: Path, git: Path) -> tuple[str, str]:
         config_path = None

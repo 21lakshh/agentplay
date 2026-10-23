@@ -4,7 +4,8 @@ Binds to 127.0.0.1 only. Serves the static viewer from the package's
 ``viewer/`` directory and these endpoints over the local store:
 
 ``GET /api/status``            ``{available, mapCount, latestSessionDate, scanning}``
-``GET /api/sessions``          paged session rows (``from``, ``to``, ``search``, ``pageSize``, ``cursor``)
+``GET /api/sessions``          paged session rows (``from``, ``to``, ``search``, ``pageSize``, ``cursor``);
+                               ``search`` also matches files, commands, MCP servers and more (see ``search.py``)
 ``GET /api/map``               one entry per ``session_id`` param, each with a ``url``
 ``GET /api/map-doc?id=...``    the map document itself
 ``GET /api/stats``             session facts for the Insights view (``from``, ``to``: inclusive ``YYYY-MM-DD``)
@@ -12,14 +13,22 @@ Binds to 127.0.0.1 only. Serves the static viewer from the package's
 ``GET /api/prompt-images?id=...``  per-turn metadata for images pasted into Claude Code prompts (this machine only)
 ``GET /api/prompt-image?id=...&turn=...&i=...``  one such image, read from the transcript on demand (this machine only)
 ``GET /api/hook-detail?id=...&uuid=...``  the message and command of one hook failure, read from the transcript on demand (this machine only)
+``GET /api/health``            Run health score, components and fixes for a window (``from``, ``to``)
+``GET /api/fix-preview``       a fix's file before and after (``fix``, ``i``: action index, ``file``, ``from``, ``to``)
+``GET /api/autotune``          Autotune settings, repos, the approval queue and its log
 ``POST /api/account``          ``{"action": "signup", "email": ...}``, ``{"action": "skip"}``, ``{"action": "disconnect"}``
+``POST /api/fix``              ``{"action": "apply", "fix", "i", "file"?, "hash"?, "from"?, "to"?}``, ``{"action": "undo", "entry"}``
+``POST /api/repos``            ``{"action": "grant" | "revoke", "repo"}``
+``POST /api/autotune``         ``{"action": "enable" | "disable" | "shared" | "approve" | "dismiss" | "never" | "run", ...}``
 
 Pasted images are read from the original transcript when asked for and never
 stored in a map, the index or an export; see ``prompt_images.py``. Hook failure
 messages and commands are read the same way; see ``hook_detail.py``.
 
-The only write is ``~/.agentplay/account.json``, and the only thing that can leave
-the machine is an email the user typed into the signup card.
+Writes stay under ``~/.agentplay`` except fixes, which ``fixes.py`` writes only
+into repos the person granted, only to four agent files, and journals for undo.
+The only thing that can leave the machine is an email the user typed into the
+signup card.
 """
 
 from __future__ import annotations
@@ -39,7 +48,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 
-from . import account, facts, hook_detail, prompt_images
+from . import account, autotune, facts, fixes, health, hook_detail, prompt_images
+from . import search as search_index
 from .store import Store
 
 MAX_PAGE = 200
@@ -199,11 +209,16 @@ class _Handler(BaseHTTPRequestHandler):
     # can tell "no sessions yet" from "no sessions".
     scanning: threading.Event | None = None
     lock = threading.Lock()
+    write_lock = threading.Lock()
     # Facts for rows written before facts existed (or by an older FACTS_VERSION),
     # computed from the stored map on first read. Kept in memory, keyed by the
     # map's content hash: the server never writes the index, which a background
     # scan may be saving at the same moment. The next build persists them.
     facts_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
+    # search.json as last read (by mtime and size) and postings computed for
+    # sessions it does not cover yet. In memory only, like `facts_cache`.
+    search_file: tuple[Any, dict[str, Any]] = (None, {})
+    search_mem: dict[tuple[str, str], dict[str, Any]] = {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # quiet by default
         return
@@ -320,6 +335,12 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._map_doc(q)
             if url.path == "/api/stats":
                 return self._stats(q)
+            if url.path == "/api/health":
+                return self._health(q)
+            if url.path == "/api/fix-preview":
+                return self._fix_preview(q)
+            if url.path == "/api/autotune":
+                return self._json({"success": True, **autotune.status(self.store)})
             if url.path == "/api/prompt-images":
                 return self._prompt_images(q)
             if url.path == "/api/prompt-image":
@@ -342,9 +363,9 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - http.server naming
         url = urlsplit(self.path)
-        if url.path != "/api/account":
+        if url.path not in ("/api/account", "/api/fix", "/api/repos", "/api/autotune"):
             return self._error(404, "not_found", "Unknown endpoint.")
-        # The only write this server takes. A browser on another site can reach
+        # Every write this server takes. A browser on another site can reach
         # 127.0.0.1, so: same machine, a local Origin and Host (no DNS rebinding),
         # and a JSON body, which a cross-site form can't send without a preflight
         # this server never answers.
@@ -364,6 +385,17 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             return self._error(400, "invalid_input", "Bad request body.")
         action = body.get("action") if isinstance(body, dict) else None
+        if url.path != "/api/account":
+            try:
+                # Its own lock: a write reads the index through `self.lock` itself.
+                with self.write_lock:
+                    return self._write(url.path, str(action or ""), body)
+            except fixes.FixError as exc:
+                return self._error(409, exc.code, exc.message)
+            except BrokenPipeError:
+                return None
+            except Exception:  # noqa: BLE001 - never leak a traceback to the page
+                return self._error(500, "internal_error", "Something went wrong writing that.")
         try:
             if action == "skip":
                 return self._json({"success": True, **account.skip()})
@@ -383,6 +415,99 @@ class _Handler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 - never leak a traceback to the page
             return self._error(500, "internal_error", "Something went wrong saving that.")
 
+    # ------------------------------------------------------------------ run health and fixes
+    def _window(self, lo: str, hi: str) -> list[dict[str, Any]]:
+        out = []
+        for r in self._rows():
+            day = r.get("sessionDate") or ""
+            if (lo and day < lo) or (hi and day and day > hi):
+                continue
+            with self.lock:
+                f = self._facts(r)
+            if f is not None:
+                out.append({**r, "facts": f})
+        return out
+
+    @staticmethod
+    def _prev_range(lo: str, hi: str) -> tuple[str, str] | None:
+        from datetime import date, timedelta
+        try:
+            a, b = date.fromisoformat(lo), date.fromisoformat(hi)
+        except ValueError:
+            return None
+        span = (b - a).days + 1
+        return (a - timedelta(days=span)).isoformat(), (a - timedelta(days=1)).isoformat()
+
+    def _health(self, q: dict[str, list[str]]) -> None:
+        lo, hi = (q.get("from") or [""])[0], (q.get("to") or [""])[0]
+        rows = self._window(lo, hi)
+        prev = self._prev_range(lo, hi)
+        report = health.report(rows, self._window(*prev) if prev else None)
+        ids = {w["sessionId"] for c in report["components"] for w in c["worst"]}
+        ids |= {sid for fx in report["fixes"] for sid in fx["sessions"][:5]}
+        titles = {r["sessionId"]: r.get("sessionTitle") for r in rows if r["sessionId"] in ids}
+        st = fixes.status(self.store.base)
+        self._json({"success": True, **report, "titles": titles, "repos": st["repos"],
+                    "applied": [{"id": e["id"], "fixId": e["fixId"], "file": e["file"], "kind": e["action"].get("kind")}
+                                for e in st["applied"]]})
+
+    def _find_fix(self, fix_id: str, lo: str, hi: str) -> dict[str, Any]:
+        fx = next((f for f in health.fixes(self._window(lo, hi)) if f["id"] == fix_id), None)
+        if fx is None:
+            raise fixes.FixError("not_found", "That fix no longer applies to these sessions.")
+        return fx
+
+    def _fix_preview(self, q: dict[str, list[str]]) -> None:
+        try:
+            fx = self._find_fix((q.get("fix") or [""])[0], (q.get("from") or [""])[0], (q.get("to") or [""])[0])
+            raw = (q.get("i") or ["0"])[0]
+            i = 0 if raw == "0" else _non_negative_int(raw)
+            if i is None or i >= len(fx["actions"]):
+                return self._error(400, "invalid_input", "No such action.")
+            rel = (q.get("file") or [None])[0]
+            self._json({"success": True, **fixes.preview(self.store.base, fx["repo"], fx, fx["actions"][i], rel)})
+        except fixes.FixError as exc:
+            self._error(409, exc.code, exc.message)
+
+    def _write(self, path: str, action: str, body: dict[str, Any]) -> None:
+        base = self.store.base
+        if path == "/api/repos":
+            repo = str(body.get("repo") or "")
+            if action == "grant":
+                return self._json({"success": True, "root": fixes.grant(base, repo)})
+            if action == "revoke":
+                fixes.revoke(base, repo)
+                return self._json({"success": True})
+        elif path == "/api/fix":
+            if action == "apply":
+                fx = self._find_fix(str(body.get("fix") or ""), str(body.get("from") or ""), str(body.get("to") or ""))
+                i = body.get("i", 0)
+                if not isinstance(i, int) or not 0 <= i < len(fx["actions"]):
+                    return self._error(400, "invalid_input", "No such action.")
+                rel = body.get("file") if isinstance(body.get("file"), str) else None
+                expect = body.get("hash") if isinstance(body.get("hash"), str) else None
+                entry = fixes.apply(base, fx, fx["actions"][i], rel=rel, expect_hash=expect)
+                return self._json({"success": True, "entry": entry})
+            if action == "undo":
+                return self._json({"success": True, "entry": fixes.undo(base, str(body.get("entry") or ""))})
+        elif path == "/api/autotune":
+            repo = str(body.get("repo") or "")
+            fix_id = str(body.get("fixId") or "")
+            if action in ("enable", "disable"):
+                autotune.set_repo(base, repo, enabled=action == "enable")
+            elif action == "shared":
+                autotune.set_repo(base, repo, claude_md="auto" if body.get("value") else "ask")
+            elif action == "approve":
+                autotune.approve(self.store, fix_id)
+            elif action in ("dismiss", "never"):
+                autotune.dismiss(self.store, fix_id, forever=action == "never")
+            elif action == "run":
+                return self._json({"success": True, **autotune.run(self.store, force=True)})
+            else:
+                return self._error(400, "invalid_input", "Unknown action.")
+            return self._json({"success": True, **autotune.status(self.store)})
+        return self._error(400, "invalid_input", "Unknown action.")
+
     def _rows(self) -> list[dict[str, Any]]:
         with self.lock:
             return [r for r in self.store.rows() if r.get("role") not in ("subagent", "helper") and r.get("calls")]
@@ -394,6 +519,35 @@ class _Handler(BaseHTTPRequestHandler):
         self._json({"success": True, "available": bool(rows), "mapCount": len(rows), "latestSessionDate": latest,
                     "scanning": scanning})
 
+    def _search_terms(self, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        path = self.store.base / "search.json"
+        try:
+            st = path.stat()
+            stamp: Any = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            stamp = None
+        with self.lock:
+            if self.search_file[0] != stamp:
+                type(self).search_file = (stamp, search_index.load(path) if stamp else {})
+            indexed = self.search_file[1]
+        out: dict[str, dict[str, Any]] = {}
+        for r in rows:
+            sid = str(r.get("sessionId") or "")
+            h = str(r.get("contentHash") or "")
+            entry = indexed.get(sid)
+            if isinstance(entry, dict) and entry.get("hash") == h:
+                out[sid] = entry.get("terms") or {}
+                continue
+            key = (sid, h)
+            if key not in self.search_mem:
+                doc = self.store.get(sid)
+                try:
+                    self.search_mem[key] = search_index.postings(doc) if doc is not None else {}
+                except (KeyError, TypeError, ValueError, AttributeError):
+                    self.search_mem[key] = {}
+            out[sid] = self.search_mem[key]
+        return out
+
     def _sessions(self, q: dict[str, list[str]]) -> None:
         rows = self._rows()
         lo = (q.get("from") or [""])[0]
@@ -403,21 +557,35 @@ class _Handler(BaseHTTPRequestHandler):
             size = min(MAX_PAGE, max(1, int((q.get("pageSize") or [DEFAULT_PAGE])[0])))
         except ValueError:
             size = DEFAULT_PAGE
+        in_window = [
+            r for r in rows
+            if not ((lo and (r.get("sessionDate") or "") and r["sessionDate"] < lo)
+                    or (hi and (r.get("sessionDate") or "") and r["sessionDate"] > hi))
+        ]
+        hits: dict[str, dict[str, Any]] = {}
+        note = None
+        if search:
+            terms = self._search_terms(in_window)
+            hits = search_index.query(terms, search)
+            if not hits and " " in search:
+                fallback = search_index.argument_fallback(terms, search)
+                if fallback:
+                    prefix, hits = fallback
+                    note = {"code": "arguments", "command": prefix}
         out = []
-        for r in rows:
-            day = r.get("sessionDate") or ""
-            if lo and day and day < lo:
-                continue
-            if hi and day and day > hi:
-                continue
+        for r in in_window:
             if search:
                 hay = " ".join(
                     [str(r.get("sessionTitle") or ""), str(r.get("sessionId") or ""), str(r.get("agentTool") or ""),
                      " ".join(map(str, r.get("repos") or [])), " ".join(map(str, r.get("models") or []))]
                 ).lower()
-                if search not in hay:
+                if search not in hay and r.get("sessionId") not in hits:
                     continue
             out.append(r)
+        if hits:
+            # Ranked by matches, then recency; title-only matches after.
+            out.sort(key=lambda r: (-(hits.get(r.get("sessionId"), {}).get("count") or 0),
+                                    "" if r.get("sessionId") in hits else "1"))
         start = _cursor_decode((q.get("cursor") or [None])[0])
         if start is None:
             return self._error(400, "invalid_input", "That page cursor is not valid.")
@@ -425,7 +593,9 @@ class _Handler(BaseHTTPRequestHandler):
         more = start + size < len(out)
         self._json({
             "success": True,
-            "sessions": [_public_row(r) for r in page],
+            "sessions": [{**_public_row(r), **({"search": hits[r["sessionId"]]} if r.get("sessionId") in hits else {})}
+                         for r in page],
+            "searchNote": note,
             "nextCursor": _cursor_encode(start + size) if more else None,
             "hasMore": more,
         })
@@ -555,7 +725,11 @@ def serve(
 
     ``scanning``: set while a background scan runs; ``/api/status`` reports it.
     """
-    handler = type("Handler", (_Handler,), {"store": store or Store(), "static": viewer_root(), "scanning": scanning})
+    handler = type("Handler", (_Handler,), {
+        "store": store or Store(), "static": viewer_root(), "scanning": scanning,
+        # Per server, so two servers in one process never share computed facts or postings.
+        "facts_cache": {}, "search_mem": {}, "search_file": (None, {}),
+    })
     try:
         return _Server((host, port), handler)
     except OSError:
