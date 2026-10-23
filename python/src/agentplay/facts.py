@@ -18,7 +18,7 @@ from typing import Any
 
 from .builder import _NON_CALL_KINDS, _error_source, estimate_cost_usd
 
-FACTS_VERSION = 5
+FACTS_VERSION = 6
 # Files kept per session in `files`, busiest first; the rest fold into `filesRest`.
 # A huge session would otherwise add hundreds of KB to its index row and to /api/stats.
 MAX_FACT_FILES = 300
@@ -99,6 +99,7 @@ def _waste(doc: dict[str, Any], evs: list[dict[str, Any]], outcome: str) -> dict
     # A re-read: a file read again with no edit to it since the last read.
     last_read: dict[int, int] = {}
     for e in evs:
+        reread = False
         for t in e.get("targets") or []:
             fid = t.get("file")
             if not isinstance(fid, int):
@@ -106,9 +107,11 @@ def _waste(doc: dict[str, Any], evs: list[dict[str, Any]], outcome: str) -> dict
             if t.get("touch") == "edit":
                 last_read.pop(fid, None)
             elif t.get("touch") == "read":
-                if fid in last_read:
-                    charge("reread", e)
+                reread = reread or fid in last_read
                 last_read[fid] = e["seq"]
+        # One read event (a shell read can name several files) buys one request at most.
+        if reread:
+            charge("reread", e)
 
     launches = {e["seq"]: e for e in evs if e["kind"] == "subagent"}
     for a in doc.get("agents") or []:

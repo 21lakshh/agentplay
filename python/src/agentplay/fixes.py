@@ -166,13 +166,14 @@ def active(base: Path) -> list[dict[str, Any]]:
 # ------------------------------------------------------------------ paths
 
 
-def _target(base: Path, repo: str, rel: str) -> Path:
+def _target(base: Path, repo: str, rel: str, root_s: str | None = None) -> Path:
+    """``rel`` inside ``repo``'s granted checkout, or inside ``root_s`` (undo: the checkout it was written to)."""
     if rel not in ALLOWED_FILES:
         raise FixError("file_not_allowed", f"agentplay only writes {', '.join(ALLOWED_FILES)}.")
-    root_s = grants(base).get(repo)
-    if not root_s:
+    granted = grants(base).get(repo)
+    if not granted:
         raise FixError("not_granted", f"Allow writes to {repo} first.")
-    root = Path(root_s).resolve()
+    root = Path(root_s or granted).resolve()
     if not (root / ".git").exists():
         raise FixError("not_a_repo", f"{root} is no longer a git checkout.")
     target = (root / rel).resolve()
@@ -288,6 +289,10 @@ def _apply_text(action: dict[str, Any], text: str | None, fix_id: str, rel: str)
         lines = [str(x) for x in action.get("lines") or [] if str(x).strip()]
         if not lines:
             raise FixError("empty_fix", "This fix has nothing to write.")
+        # Fix text carries command verbs from maps, which an imported map controls: a line
+        # break would write an instruction outside the marked line that undo cannot remove.
+        if any(ch in line for line in lines for ch in "\r\n\x0b\x0c\x85\u2028\u2029"):
+            raise FixError("bad_fix", "This fix text spans more than one line; agentplay will not write it.")
         return add_lines(text, fix_id, lines, rel)
     data = _settings(text, rel)
     if kind == "settings_allow":
@@ -457,6 +462,7 @@ def _apply_locked(
         "rule": fix.get("rule"),
         "title": fix.get("title"),
         "repo": repo,
+        "root": str(Path(grants(base)[repo]).resolve()),
         "file": rel,
         "action": action,
         "source": source,
@@ -494,7 +500,8 @@ def _undo_locked(base: Path, entry_id: str, reason: str) -> dict[str, Any]:
     entry = next((e for e in entries if e.get("id") == entry_id and not e.get("undoneAt")), None)
     if entry is None:
         raise FixError("not_found", "Nothing to undo with that id.")
-    target = _target(base, entry["repo"], entry["file"])
+    # The checkout it was written to, even if the grant has since moved to another one.
+    target = _target(base, entry["repo"], entry["file"], entry.get("root"))
     text = _read(target)
     if text is not None:
         after = _undo_text(entry, text)

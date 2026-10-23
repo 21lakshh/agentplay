@@ -13,6 +13,10 @@ describe('health helpers', () => {
     expect(actionText({ kind: 'stop_hook', label: 'x', file: 's', command: 'pytest' })).toContain('"command": "pytest"');
   });
 
+  it('treats a report without fixes as having none', () => {
+    expect(healthReportSchema.parse({ sessions: 3 }).fixes).toEqual([]);
+  });
+
   it('keeps the readable fixes from a partly unreadable report', () => {
     const r = healthReportSchema.parse({ sessions: 3, fixes: [{ id: 'a', title: 'T' }, { nope: true }] });
     expect(r.fixes.map((f) => f.id)).toEqual(['a']);

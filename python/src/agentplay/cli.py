@@ -423,27 +423,29 @@ def cmd_autotune(args: argparse.Namespace) -> int:
             if args.at and not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", args.at):
                 print("agentplay: --at takes a 24-hour time, like 09:00.", file=sys.stderr)
                 return 1
-            for repo in args.repo or [r["name"] for r in fixes.status(st.base)["repos"] if r["granted"]]:
-                autotune.set_repo(st.base, repo, enabled=True)
-            cfg = autotune.config(st.base)
-            if args.at:
-                # One schedule only: a leftover SessionStart hook would run first and the cron run would skip.
-                autotune.uninstall_hook()
-                cfg["when"] = args.at
-                autotune.save(st.base, cfg)
-                print(f"Add this to your crontab (crontab -e) to run daily at {args.at}:")
-                hh, mm = args.at.split(":")
-                # cron's PATH rarely holds pipx, uv or venv bin dirs, so name the command by absolute path.
-                found = shutil.which("agentplay")
-                exe = shlex.quote(os.path.abspath(found)) if found else f"{shlex.quote(sys.executable)} -m agentplay"
-                # cron ends the command at an unescaped %, before the shell sees it.
-                cmd = autotune.HOOK_COMMAND.replace("agentplay", exe, 1).replace("%", "\\%")
-                print(f"  {int(mm)} {int(hh)} * * * {cmd}")
-            else:
-                path = autotune.install_hook()
-                cfg["when"] = "session-start"
-                autotune.save(st.base, cfg)
-                print(f"Autotune runs at most once a day, when a Claude Code session starts ({path}).")
+            # Held from read to save: a run in between would otherwise lose its log and queue.
+            with fixes.write_lock(st.base):
+                for repo in args.repo or [r["name"] for r in fixes.status(st.base)["repos"] if r["granted"]]:
+                    autotune.set_repo(st.base, repo, enabled=True)
+                cfg = autotune.config(st.base)
+                if args.at:
+                    # One schedule only: a leftover SessionStart hook would run first and the cron run would skip.
+                    autotune.uninstall_hook()
+                    cfg["when"] = args.at
+                    autotune.save(st.base, cfg)
+                    print(f"Add this to your crontab (crontab -e) to run daily at {args.at}:")
+                    hh, mm = args.at.split(":")
+                    # cron's PATH rarely holds pipx, uv or venv bin dirs, so name the command by absolute path.
+                    found = shutil.which("agentplay")
+                    exe = shlex.quote(os.path.abspath(found)) if found else f"{shlex.quote(sys.executable)} -m agentplay"
+                    # cron ends the command at an unescaped %, before the shell sees it.
+                    cmd = autotune.HOOK_COMMAND.replace("agentplay", exe, 1).replace("%", "\\%")
+                    print(f"  {int(mm)} {int(hh)} * * * {cmd}")
+                else:
+                    path = autotune.install_hook()
+                    cfg["when"] = "session-start"
+                    autotune.save(st.base, cfg)
+                    print(f"Autotune runs at most once a day, when a Claude Code session starts ({path}).")
         elif args.action == "off":
             for repo in args.repo or list(autotune.config(st.base)["repos"]):
                 autotune.set_repo(st.base, repo, enabled=False)

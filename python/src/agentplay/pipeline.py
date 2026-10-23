@@ -242,10 +242,12 @@ def build_all(
                 pending = True
             need = set((store.index.get(c.session_id) or {}).get("repos") or []) - set(known_roots) - tried - waiting
             if need:
-                tried |= need
                 try:
                     discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__,
                                        resolver=resolver)
+                    # Marked only once a lookup worked: an unreadable session leaves the
+                    # names for the next session that mentions them.
+                    tried |= need
                     looked |= need
                 except Exception:  # noqa: BLE001 - only for its roots; the stored map stays as it is
                     logger.debug("root lookup failed for %s", c.session_id, exc_info=True)

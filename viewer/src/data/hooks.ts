@@ -269,8 +269,11 @@ export function useInsightsStats(range: { from?: string; to?: string }) {
 /** Run health for a range. Local server only. */
 export function useHealth(range: { from?: string; to?: string }) {
   const source = useSessionMapSource();
+  const status = useSessionExplorerStatus();
+  // Same as Insights: a scan adding maps changes the score, so it changes the key.
+  const stamp = status.data ? `${status.data.mapCount}:${status.data.scanning}` : '';
   return useQuery({
-    queryKey: ['health', source.id, range.from ?? '', range.to ?? ''] as const,
+    queryKey: ['health', source.id, range.from ?? '', range.to ?? '', stamp] as const,
     queryFn: () => {
       if (!source.health) throw new SessionExplorerError('Run health needs the local CLI', 'unsupported');
       return source.health(range);

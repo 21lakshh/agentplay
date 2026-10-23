@@ -12,7 +12,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useInsightsStats } from '@/data/hooks';
 import { useSessionMapSource } from '@/data/SourceContext';
-import { sessionWindowRange } from '@/core/sessionWindow';
+import { useWindowRange } from '@/data/windowRange';
 import { WINDOW_OPTIONS, type WindowKey } from '@/core/windowOptions';
 import { filterOptions, filterSessions, type InsightsFilter } from '@/core/insights';
 import {
@@ -93,9 +93,9 @@ export function InsightsView({
   onWindowChange: (key: WindowKey) => void;
 }) {
   const source = useSessionMapSource();
-  // Recomputed per window change only: a range off "now" that moved every
-  // render would refetch forever.
-  const range = useMemo(() => sessionWindowRange(windowKey, new Date()), [windowKey]);
+  // Stable per window and calendar day: a range off "now" that moved every render
+  // would refetch forever, one fixed at mount would drop today after midnight.
+  const range = useWindowRange(windowKey);
   const stats = useInsightsStats(range);
   const [filter, setFilter] = useState<InsightsFilter>({});
   const [page, setPage] = useQueryState('ipage', parseAsStringEnum([...PAGES]).withDefault('overview'));

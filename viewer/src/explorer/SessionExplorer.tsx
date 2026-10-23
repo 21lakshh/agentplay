@@ -78,7 +78,7 @@ import {
   scopedModelUsage,
   taskNoun,
 } from '@/core/sessionScope';
-import { sessionWindowRange } from '@/core/sessionWindow';
+import { useWindowRange } from '@/data/windowRange';
 import { useEventCategories } from './useEventCategories';
 import { useExplorerScope, type ExplorerScope } from './useExplorerScope';
 import { useMapModel, usePlaybackWindow } from './usePlaybackWindow';
@@ -91,40 +91,6 @@ interface Props {
   /** optional control under the "No session maps yet" empty state (e.g. an
    * "Open a map file" button) */
   emptyAction?: ReactNode;
-}
-
-/** A cache-busting key that changes at EITHER the viewer's local midnight
- * or UTC midnight, whichever comes first (not a real ISO date). Two
- * different fields of `sessionWindowRange`'s result roll over on two
- * different clocks: `daysThisMonth` derives MTD's `from` from local
- * `getDate()`, but `to` (every window) is `toISOString().slice(0, 10)`,
- * a UTC date. A key on only one clock stays stale across the other
- * boundary for up to the viewer's UTC offset. */
-const dateBoundaryKey = (d: Date) =>
-  `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}-${d.toISOString().slice(0, 10)}`;
-
-/** The list's date range for `windowKey`, kept fresh across midnight. */
-function useWindowRange(windowKey: WindowKey) {
-  // `sessionWindowRange` is keyed off `new Date()` at call time, but a memo
-  // keyed only on `windowKey` never re-runs that call once the tab has been
-  // open a while - the range (mtd's start, and every window's `to`) goes
-  // stale after a real calendar day rolls over while the page stays mounted
-  //. A cheap poll refreshes it within a minute of that,
-  // keyed by both clocks it can roll over on (see `dateBoundaryKey`).
-  const [today, setToday] = useState(() => dateBoundaryKey(new Date()));
-  useEffect(() => {
-    const id = setInterval(() => {
-      const next = dateBoundaryKey(new Date());
-      setToday((prev) => (prev === next ? prev : next));
-    }, 60_000);
-    return () => clearInterval(id);
-  }, []);
-  return useMemo(
-    // `today` is not read in the body; it exists purely to invalidate this
-    // memo once the poll above notices the calendar date has moved on.
-    () => sessionWindowRange(windowKey, new Date()),
-    [windowKey, today]
-  );
 }
 
 /** The sessions in the window (search-filtered), the effective selection,
@@ -293,8 +259,7 @@ export function SessionExplorer({
       // Picking a session shows its map and Details; the list stays, so
       // the next one is one click away rather than one back-out away.
       onSelect={(id) => {
-        // Always clear: a task, model or subagent scope may not contain the hit's event.
-        void setScopeParams(CLEAR_SCOPE_PARAMS);
+        if (id !== selectedId) void setScopeParams(CLEAR_SCOPE_PARAMS);
         void data.setSelected(id);
       }}
       // Open descends into it, on every task: any task/model narrowing from

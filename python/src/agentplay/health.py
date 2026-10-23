@@ -21,6 +21,7 @@ with the pattern's effect removed (or raised to a target rate), minus now.
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -53,6 +54,17 @@ _PURPOSES = (
     ("typecheck", ("tsc", "mypy", "pyright", "typecheck", "type-check")),
     ("build", ("build", "compile")),
 )
+
+
+def _scope(verb: str) -> frozenset[str]:
+    """What a check is narrowed to beyond its job: ``pnpm test:unit`` -> {"unit"}, ``pnpm vitest`` -> {}.
+
+    Two checks only stand in for each other when their scopes match, so a
+    failing unit suite is never "replaced" by a passing e2e one.
+    """
+    words = [w for w in re.split(r"[^a-z0-9]+", verb.lower()) if w][1:]
+    job_words = {w for _, ws in _PURPOSES for w in ws}
+    return frozenset(w for w in words if w not in ("run", "exec", "x") and not any(j in w for j in job_words))
 
 
 def purpose(verb: str) -> str | None:
@@ -263,7 +275,7 @@ def fixes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             family = bad.split()[0]
             good = sorted(
                 (v for v, g in cmds.items() if v != bad and v.split()[0] == family and purpose(v) == job
-                 and g["calls"] >= 3 and 1 - g["fails"] / g["calls"] >= 0.8),
+                 and _scope(v) == _scope(bad) and g["calls"] >= 3 and 1 - g["fails"] / g["calls"] >= 0.8),
                 key=lambda v: -cmds[v]["calls"],
             )
             if not good:

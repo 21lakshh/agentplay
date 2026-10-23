@@ -48,7 +48,12 @@ export function RunHealthView({ range }: { range: Range }) {
         <ScoreCard h={h} />
         <Components h={h} />
       </div>
-      <PointsOnTheTable h={h} range={range} />
+      {/* While a new window's report loads, the previous one stays on screen but its
+          actions are off: they would apply fixes against the wrong range. */}
+      <fieldset disabled={health.isPlaceholderData} aria-busy={health.isPlaceholderData} className="min-w-0">
+        <legend className="sr-only">{health.isPlaceholderData ? 'Updating fixes' : 'Fixes'}</legend>
+        <PointsOnTheTable h={h} range={range} />
+      </fieldset>
     </div>
   );
 }

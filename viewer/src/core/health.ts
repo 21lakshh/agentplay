@@ -58,7 +58,7 @@ export const healthReportSchema = z.object({
   score: z.number().nullable().catch(null),
   prevScore: z.number().nullable().catch(null),
   components: z.array(componentSchema).catch([]),
-  fixes: z.array(z.unknown()).transform((xs) =>
+  fixes: z.array(z.unknown()).catch([]).transform((xs) =>
     xs.flatMap((x) => {
       const p = fixSchema.safeParse(x);
       return p.success ? [p.data] : [];
