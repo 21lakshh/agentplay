@@ -271,8 +271,8 @@ def _add_usage(turn: dict, step: dict) -> None:
     prompt = as_count(step.get("input_tokens"))
     cache_read = min(as_count(step.get("cache_read_tokens")), prompt)
     completion = as_count(step.get("output_tokens"))
-    if not prompt and not completion:
-        return
+    # A planner step that reports zero tokens is still a request. Dropping it
+    # undercounts model-usage summaries.
     turn["prompt_tokens"] += prompt
     turn["completion_tokens"] += completion
     turn["cache_read"] += cache_read

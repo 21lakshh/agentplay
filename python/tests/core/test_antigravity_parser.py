@@ -383,6 +383,16 @@ def test_error_status_or_error_field_marks_failure():
     assert [s.status_code for s in _tools(parse_antigravity(data, "t")[1])] == ["ERROR", "ERROR"]
 
 
+def test_zero_token_planner_still_records_a_request():
+    data = _log(_prompt(), _planner(input_tokens=0, output_tokens=0, cache_read_tokens=0))
+    (turn,) = _turns(parse_antigravity(data, "t")[1])
+    (event,) = turn.attributes["llm.cost_events"]
+    assert event["input_tokens"] == 0
+    assert event["output_tokens"] == 0
+    assert turn.attributes["llm.token_count.prompt"] == 0
+    assert turn.attributes["llm.token_count.completion"] == 0
+
+
 def test_cache_reads_are_a_subset_of_input():
     data = _log(_prompt(), _planner(input_tokens=100, cache_read_tokens=40, output_tokens=5),
                 _planner(input_tokens=10, cache_read_tokens=99, output_tokens=1))
