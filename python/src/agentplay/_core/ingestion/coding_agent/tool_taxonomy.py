@@ -224,8 +224,31 @@ _COPILOT_VSCODE: dict[str, str] = {
     "runSubagent": "Task",
 }
 
+# Gemini CLI's built-in tool names. `read_file`, `replace`, `write_file` and
+# `run_shell_command` were seen in real Gemini CLI 0.65 sessions; the rest are
+# the `*_TOOL_NAME` constants in the same release's bundle. `replace` is an
+# in-place old_string/new_string edit and `write_file` writes the whole file,
+# the same Edit/Write split as Copilot's `edit` vs `create`. Meta tools
+# (`update_topic`, `ask_user`, `enter_plan_mode`, `tracker_*`, `activate_skill`,
+# ...) and MCP tools (`mcp_<server>_<tool>`) pass through unaliased.
+_GEMINI_CLI: dict[str, str] = {
+    "run_shell_command": "Bash",
+    "read_file": "Read",
+    "read_many_files": "Read",
+    "replace": "Edit",
+    "write_file": "Write",
+    "grep_search": "Grep",
+    "glob": "Glob",
+    "list_directory": "ListDir",
+    "web_fetch": "WebFetch",
+    "google_web_search": "WebSearch",
+    "write_todos": "TodoWrite",
+    "invoke_agent": "Task",
+}
+
 TOOL_ALIASES: dict[str, dict[str, str]] = {
     "codex": _CODEX,
+    "gemini-cli": _GEMINI_CLI,
     "cursor": _CURSOR,
     "copilot": _COPILOT,
     "copilot-vscode": _COPILOT_VSCODE,
