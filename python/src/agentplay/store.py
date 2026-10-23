@@ -42,7 +42,10 @@ def _atomic_write(path: Path, data: bytes, *, private: bool = True) -> None:
         path = Path(os.path.realpath(path))
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
-        mode: int | None = stat.S_IMODE(path.stat().st_mode)
+        # lstat for the store: a link planted there must not lend its target's mode
+        # (a 0644 target would make the replacement readable by other users).
+        st = os.lstat(path) if private else path.stat()
+        mode: int | None = stat.S_IMODE(st.st_mode) if stat.S_ISREG(st.st_mode) else None
     except FileNotFoundError:
         mode = None
     tmp = path.parent / f"{path.name}{uuid.uuid4().hex[:8]}.tmp"

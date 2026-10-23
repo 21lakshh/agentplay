@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import subprocess
 import threading
 from pathlib import Path
@@ -421,3 +422,28 @@ def test_bad_cron_time_leaves_the_hook_alone(monkeypatch, capsys):
         action, at, repo = "on", "9am", []
 
     assert cli.cmd_autotune(A()) == 1 and not called
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt", reason="POSIX permissions")
+def test_a_private_store_write_never_takes_a_symlink_targets_mode(tmp_path):
+    from agentplay.store import _atomic_write
+
+    target = tmp_path / "elsewhere.json"
+    target.write_text("theirs")
+    target.chmod(0o644)
+    link = tmp_path / "store" / "index.json"
+    link.parent.mkdir()
+    link.symlink_to(target)
+    _atomic_write(link, b"ours")
+    assert not link.is_symlink() and (link.stat().st_mode & 0o777) == 0o600
+    assert target.read_text() == "theirs" and (target.stat().st_mode & 0o777) == 0o644
+
+
+def test_file_chips_add_up_distinct_paths_that_share_a_basename():
+    terms = {"s1": {
+        "file:acme/api:src/one/a.ts": [[1, "read", 50]],
+        "file:acme/api:src/two/a.ts": [[2, "read", 50]],
+        "file:a.ts": [[1, "read", 50], [2, "read", 50]],
+    }}
+    chip = search.query(terms, "file:src")["s1"]["chips"][0]
+    assert chip["n"] == 100

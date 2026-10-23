@@ -436,7 +436,9 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                 # cron's PATH rarely holds pipx, uv or venv bin dirs, so name the command by absolute path.
                 found = shutil.which("agentplay")
                 exe = shlex.quote(os.path.abspath(found)) if found else f"{shlex.quote(sys.executable)} -m agentplay"
-                print(f"  {int(mm)} {int(hh)} * * * {autotune.HOOK_COMMAND.replace('agentplay', exe, 1)}")
+                # cron ends the command at an unescaped %, before the shell sees it.
+                cmd = autotune.HOOK_COMMAND.replace("agentplay", exe, 1).replace("%", "\\%")
+                print(f"  {int(mm)} {int(hh)} * * * {cmd}")
             else:
                 path = autotune.install_hook()
                 cfg["when"] = "session-start"

@@ -76,14 +76,16 @@ def test_an_unreadable_config_is_reported_and_never_overwritten(tuned):
     assert exc.value.code == "bad_json" and path.read_text() == "{not json"
 
 
-def test_a_revoked_or_broken_repo_does_not_abort_the_run(tuned):
+def test_a_revoked_or_broken_repo_does_not_abort_the_run(tuned, monkeypatch):
     st, root, found, due = tuned
     found.append(_fix("md0001", MD))
     autotune.run(st, force=True)
     due.append(True)
     fixes.revoke(st.base, "acme/api")
+    # A clock of its own, so the assertion proves this run moved the daily marker.
+    monkeypatch.setattr(autotune, "_now", lambda: "2099-01-01T00:00:00Z")
     res = autotune.run(st, force=True, today="2099-01-01")
-    assert res["retired"] == [] and autotune.config(st.base)["lastRun"]
+    assert res["retired"] == [] and autotune.config(st.base)["lastRun"] == "2099-01-01T00:00:00Z"
     assert not [x for x in autotune.config(st.base)["log"] if x["kind"] == "error"]
     # Granted again but the checkout lost .git: logged once, not on every daily run.
     fixes.grant(st.base, "acme/api")
@@ -194,3 +196,17 @@ def test_approving_a_change_after_its_repo_is_revoked_writes_nothing(tuned):
     with pytest.raises(fixes.FixError) as exc:
         autotune.approve(st, "hook01")
     assert exc.value.code == "not_granted" and not (root / ".claude" / "settings.json").exists()
+
+
+def test_cron_line_escapes_percent_signs(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "Store", lambda: Store(tmp_path))
+    monkeypatch.setattr(fixes, "status", lambda _b: {"repos": []})
+    monkeypatch.setattr(autotune, "uninstall_hook", lambda: None)
+    monkeypatch.setattr(shutil, "which", lambda _n: "/opt/100%/agentplay")
+
+    class A:
+        action, at, repo = "on", "09:30", []
+
+    assert cli.cmd_autotune(A()) == 0
+    line = capsys.readouterr().out.splitlines()[-1]
+    assert "100\\%" in line and "100%/" not in line

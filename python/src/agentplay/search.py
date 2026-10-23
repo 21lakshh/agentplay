@@ -185,14 +185,22 @@ def query(terms_by_session: dict[str, dict[str, list[list[Any]]]], q: str) -> di
         if not hits:
             continue
         groups: dict[tuple[str, str], list[int | None]] = {}
-        totals: dict[tuple[str, str], int] = {}
+        # Per group: totals by full-path term (distinct files add up), and the
+        # basename alias's total, used only when no full-path term matched.
+        full: dict[tuple[str, str], dict[str, int]] = {}
+        alias: dict[tuple[str, str], int] = {}
         for t, (seq, touch, *total) in hits:
             # The basename and the full-path term of one file are the same match.
             key = (_label(t), touch)
             if seq not in groups.setdefault(key, []):
                 groups[key].append(seq)
             if total:
-                totals[key] = max(totals.get(key, 0), total[0])
+                if t.startswith("file:") and t.count(":") >= 2:
+                    by_term = full.setdefault(key, {})
+                    by_term[t] = max(by_term.get(t, 0), total[0])
+                else:
+                    alias[key] = max(alias.get(key, 0), total[0])
+        totals = {k: sum(full[k].values()) if full.get(k) else alias.get(k, 0) for k in groups}
         # Stored postings are capped per touch kind, so cap per kind here too or a
         # busy file's reads would crowd its edits out of the stepper.
         by_touch: dict[str, set[int]] = {}
