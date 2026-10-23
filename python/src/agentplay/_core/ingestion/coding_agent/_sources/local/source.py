@@ -1157,24 +1157,26 @@ def _gemini_user_counts(content: object) -> bool:
     return any(text and not text.lstrip().startswith(_GEMINI_SESSION_CONTEXT_PREFIX) for text in texts)
 
 
-def _gemini_has_messages(head: bytes) -> bool:
-    """True when the head holds a real prompt or a `gemini` message.
+def _gemini_has_messages(path: Path) -> bool:
+    """True when the file holds a real prompt or a `gemini` message.
 
-    A session opened and closed without a prompt is the header plus the CLI's
-    `<session_context>` user record. That record is not a turn, so the file
-    has nothing to map and is an `empty_events` skip, same as a header-only
-    file and `_kiro_event_count == 0`.
+    Streams one line at a time and stops at the first qualifying record, so a
+    prompt that sits past `_read_head` (after a multi-MB `<session_context>`
+    line) is still found. A file of only the header, that context block, or
+    empty user text is skipped at EOF, same as `_kiro_event_count == 0`.
+    The whole transcript is never held at once.
     """
-    for line in head.split(b"\n"):
-        try:
-            obj = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(obj, dict):
-            continue
-        kind = obj.get("type")
-        if kind == "gemini" or (kind == "user" and _gemini_user_counts(obj.get("content"))):
-            return True
+    with path.open("rb") as handle:
+        for line in handle:
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            kind = obj.get("type")
+            if kind == "gemini" or (kind == "user" and _gemini_user_counts(obj.get("content"))):
+                return True
     return False
 
 
@@ -1963,7 +1965,12 @@ class LocalSource:
             self._record_discovery("gemini-cli", "different_agent")
             return None
 
-        if not _gemini_has_messages(head):
+        try:
+            has_messages = _gemini_has_messages(jsonl_file)
+        except OSError:
+            self._record_discovery("gemini-cli", "empty_or_unreadable")
+            return None
+        if not has_messages:
             logger.debug("gemini-cli: %s has no messages; session skipped", jsonl_file)
             self._record_discovery("gemini-cli", "empty_events")
             return None

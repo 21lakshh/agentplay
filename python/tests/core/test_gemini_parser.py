@@ -449,6 +449,52 @@ def test_empty_text_user_record_is_skipped_as_empty_events(tmp_path):
     assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
 
 
+def test_prompt_past_the_head_is_indexed_and_empty_sessions_are_skipped(tmp_path):
+    # `_read_head` returns at most 5MB plus one 64KB chunk once the header has
+    # identified the agent. A context record larger than that hides the first
+    # real prompt from a head-only check.
+    home = tmp_path / ".gemini"
+    chats = home / "tmp" / "project" / "chats"
+    chats.mkdir(parents=True)
+    (chats.parent / ".project_root").write_text(FIXTURE_ROOT, encoding="utf-8")
+    past_head = "<session_context>\n" + ("x" * (5_000_000 + 65_536)) + "\n</session_context>"
+    prompt = {
+        "id": "u1",
+        "timestamp": "2026-10-23T07:04:00Z",
+        "type": "user",
+        "content": [{"text": "PROMPT-PLACEHOLDER-1"}],
+    }
+    model = {
+        "id": "g1",
+        "timestamp": "2026-10-23T07:04:01Z",
+        "type": "gemini",
+        "content": "MODEL-TEXT-PLACEHOLDER",
+        "model": "gemini-3-flash-preview",
+    }
+    context = "<session_context>\nCONTEXT-PLACEHOLDER\n</session_context>"
+    files = {
+        "session-prompt-past-head.jsonl": (_context_user("u0", past_head), prompt, "prompt-past-head"),
+        "session-model-past-head.jsonl": (_context_user("u0", past_head), model, "model-past-head"),
+        "session-context-only.jsonl": (
+            _context_user("u0", context),
+            None,
+            "context-only",
+        ),
+        "session-empty-text.jsonl": (_context_user("u0", ""), None, "empty-text"),
+    }
+    for name, (first, second, session_id) in files.items():
+        records = (first,) if second is None else (first, second)
+        (chats / name).write_bytes(_session(*records, session_id=session_id))
+
+    source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[home])
+    index = source._build_index()
+    assert "local:gemini-cli:prompt-past-head" in index
+    assert "local:gemini-cli:model-past-head" in index
+    assert "local:gemini-cli:context-only" not in index
+    assert "local:gemini-cli:empty-text" not in index
+    assert source.discovery_stats()["gemini-cli"]["skipped"]["empty_events"] == 2
+
+
 def test_local_source_indexes_gemini_sessions(tmp_path):
     source = LocalSource(claude_code_homes=[], codex_homes=[], gemini_homes=[_gemini_home(tmp_path)])
     index = source._build_index()
