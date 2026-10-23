@@ -146,9 +146,7 @@ function useExplorerSessions(windowKey: WindowKey) {
     [list.data]
   );
   const listIds = useMemo(() => sessions.map((s) => s.sessionId), [sessions]);
-  const selectedId = sessions.some((s) => s.sessionId === selected)
-    ? selected
-    : (sessions[0]?.sessionId ?? null);
+  const selectedId = selected || sessions[0]?.sessionId || null;
   const selectedRow = sessions.find((s) => s.sessionId === selectedId) ?? null;
   const mapQuery = useSessionExplorerMap(selectedId, listIds);
   return {
@@ -257,7 +255,13 @@ export function SessionExplorer({
     <WindowSelect windowKey={windowKey} onChange={onWindowChange} />
   ) : null;
 
-  if (!sessions.length && !data.debouncedSearch && !list.hasNextPage) {
+  const showLinked = !!data.selected && !scanning;
+  if (
+    !sessions.length &&
+    !data.debouncedSearch &&
+    !list.hasNextPage &&
+    !showLinked
+  ) {
     // The window select lives in the sidebar, which this state replaces, so
     // it is rendered here too -- otherwise "try a longer window" would have
     // no control to act on.
