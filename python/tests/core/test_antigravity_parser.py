@@ -184,7 +184,7 @@ def test_read_session_keeps_only_the_prompt_and_the_path():
     assert spans[0].attributes["llm.model_name"] == ""
 
 
-def test_session_end_reaches_a_later_tool_completion():
+def test_session_and_turn_end_reach_a_later_tool_completion():
     data = _log(
         _prompt(),
         _planner(_call("read_file", Path="/p/a.py")),
@@ -194,6 +194,10 @@ def test_session_end_reaches_a_later_tool_completion():
     end = datetime(2026, 10, 23, 10, 5, tzinfo=UTC)
     assert trace.end_time == end
     assert spans[0].end_time == end
+    # The last step is at 10:00:02, but the read completed at 10:05:00.
+    (turn,) = _turns(spans)
+    assert turn.end_time == end
+    assert turn.end_time >= max(t.end_time for t in _tools(spans))
 
 
 def test_edit_and_run_normalizes_args():

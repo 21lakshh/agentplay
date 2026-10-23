@@ -170,9 +170,15 @@ def parse_antigravity(
             "tools": [],
         }
 
+    def _add_tool(owner: dict, span: SpanData) -> None:
+        owner["tools"].append(span)
+        # A tool can finish after its turn's last step; the turn ends no earlier.
+        if span.end_time > owner["end"]:
+            owner["end"] = span.end_time
+
     def _flush_pending() -> None:
         for owner, planner, call, index in pending:
-            owner["tools"].append(_tool_span(trace_id, owner, planner, call, index, None))
+            _add_tool(owner, _tool_span(trace_id, owner, planner, call, index, None))
         pending.clear()
 
     def _close_turn() -> None:
@@ -204,7 +210,7 @@ def parse_antigravity(
             pending.extend((turn, step, call, i) for i, call in enumerate(_tool_calls(step)))
         elif stype == "GENERIC" and pending:
             owner, planner, call, index = pending.pop(0)
-            owner["tools"].append(_tool_span(trace_id, owner, planner, call, index, step))
+            _add_tool(owner, _tool_span(trace_id, owner, planner, call, index, step))
 
         if turn is not None and ts is not None and ts > turn["end"]:
             turn["end"] = ts
