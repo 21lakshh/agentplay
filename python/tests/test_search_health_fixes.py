@@ -368,6 +368,7 @@ def test_cache_miss_requests_are_charged_once():
         {"seq": 3, "kind": "read", "agent": "main", "targets": [{"file": 1, "touch": "read"}]},
         {"seq": 4, "kind": "llm", "agent": "main", "cost": 1.0, "in": 1_000_000, "model": "claude-sonnet-4"},
     ]
+    assert facts._cache_miss_usd("claude-sonnet-4", 1_000_000) > 0  # there is an estimate to move
     waste = facts._waste({"agents": []}, evs, "completed")
     # Request 4 is a re-read's: its full cost goes there, and its cache-miss estimate leaves cacheMiss.
     assert waste["reread"] == 1.0 and waste["cacheMiss"] == 0
@@ -390,3 +391,26 @@ def test_resolver_roots_keep_the_latest_checkout(tmp_path):
     r.resolve(str(a))
     name = next(iter(r.roots()))
     assert r.roots()[name] == str(a)
+
+
+def test_an_all_digit_fix_id_is_matched_before_a_list_number(tmp_path):
+    from agentplay import cli
+
+    items = [{"id": "aaaaaaaaaaaa"}, {"id": "123456789012"}]
+    assert cli._pick_fix(None, items, "123456789012")["id"] == "123456789012"
+    assert cli._pick_fix(None, items, "1")["id"] == "aaaaaaaaaaaa"
+    assert cli._pick_fix(None, items, "0") is None
+
+
+def test_bad_cron_time_leaves_the_hook_alone(monkeypatch, capsys):
+    from agentplay import cli
+
+    called = []
+    monkeypatch.setattr(autotune, "uninstall_hook", lambda: called.append(1))
+    monkeypatch.setattr(cli, "Store", lambda: None)
+    monkeypatch.setattr(fixes, "status", lambda _b: {"repos": []})
+
+    class A:
+        action, at, repo = "on", "9am", []
+
+    assert cli.cmd_autotune(A()) == 1 and not called

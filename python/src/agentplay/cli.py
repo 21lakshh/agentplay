@@ -333,12 +333,16 @@ def _health_fixes(st: Store, days: int = 30) -> list[dict]:
 
 def _pick_fix(st: Store, items: list[dict], target: str) -> dict | None:
     """A fix by its 1-based number in ``items`` or by id (the viewer shows ids, over any window)."""
-    if target.isdigit():
-        n = int(target)
-        return items[n - 1] if 1 <= n <= len(items) else None
     if not target:
         return None
-    return next((f for f in items if f["id"] == target), None) or next(
+    # An exact id first: ids are hex, so one can be all digits.
+    exact = next((f for f in items if f["id"] == target), None)
+    if exact is not None:
+        return exact
+    if target.isdigit() and len(target) < 12:
+        n = int(target)
+        return items[n - 1] if 1 <= n <= len(items) else None
+    return next(
         (f for f in _health_fixes(st, days=36500) if f["id"] == target), None
     )
 
@@ -408,6 +412,10 @@ def cmd_autotune(args: argparse.Namespace) -> int:
     st = Store()
     try:
         if args.action == "on":
+            # Checked before anything changes: a typo must not leave Autotune without a schedule.
+            if args.at and not re.fullmatch(r"([01]?\d|2[0-3]):[0-5]\d", args.at):
+                print("agentplay: --at takes a 24-hour time, like 09:00.", file=sys.stderr)
+                return 1
             for repo in args.repo or [r["name"] for r in fixes.status(st.base)["repos"] if r["granted"]]:
                 autotune.set_repo(st.base, repo, enabled=True)
             cfg = autotune.config(st.base)

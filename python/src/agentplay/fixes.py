@@ -50,6 +50,9 @@ class FixError(Exception):
 # ------------------------------------------------------------------ locking
 
 _held = threading.local()
+# Threads of one process: flock already separates them (one open file each), but
+# msvcrt locks belong to the process, so Windows needs this too.
+_process_lock = threading.Lock()
 
 
 @contextmanager
@@ -68,7 +71,7 @@ def write_lock(base: Path) -> Iterator[None]:
             _held.depth -= 1
         return
     base.mkdir(parents=True, exist_ok=True)
-    with open(base / "write.lock", "a+b") as fh:
+    with _process_lock, open(base / "write.lock", "a+b") as fh:
         _lock_file(fh, True)
         _held.depth = 1
         try:
