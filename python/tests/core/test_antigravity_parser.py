@@ -394,20 +394,94 @@ def test_cache_reads_are_a_subset_of_input():
     assert [e["input_tokens"] for e in attrs["llm.cost_events"]] == [60, 0]
 
 
+def test_aliased_tools_keep_only_path_and_pattern_keys():
+    """Schemas from the agy 1.4.6 binary. File text, prompts and explanations stay out."""
+    data = _log(
+        _prompt(),
+        _planner(
+            _call(
+                "write_to_file",
+                TargetFile="/Users/dev/project/a.py",
+                CodeContent="SECRET-CONTENT",
+                explanation="SECRET-WHY",
+            ),
+            _call(
+                "replace_file_content",
+                TargetFile="/Users/dev/project/b.py",
+                Instruction="SECRET-INSTRUCTION",
+                TargetContent="SECRET-OLD",
+                ReplacementContent="SECRET-NEW",
+            ),
+            _call(
+                "multi_replace_file_content",
+                TargetFile="/Users/dev/project/c.py",
+                ReplacementChunks=[{"TargetContent": "SECRET-OLD", "ReplacementContent": "SECRET-NEW"}],
+            ),
+            _call(
+                "grep_search",
+                Query="needle",
+                SearchPath="/Users/dev/project",
+                Includes="*.py",
+                explanation="SECRET-WHY",
+            ),
+            _call(
+                "find_by_name",
+                Pattern="*.py",
+                SearchDirectory="/Users/dev/project",
+                Excludes="vendor/**",
+                Type="file",
+                toolSummary="SECRET-SUMMARY",
+            ),
+            _call("list_dir", DirectoryPath="/Users/dev/project", explanation="SECRET-WHY"),
+            _call("search_web", Query="SECRET-WEB", domain="example.com"),
+            _call("read_url_content", Url="https://example.com/doc", markdown_content="SECRET-PAGE"),
+        ),
+    )
+    tools = _tools(parse_antigravity(data, "t")[1])
+    assert [s.name for s in tools] == [
+        "Write",
+        "Edit",
+        "Edit",
+        "Grep",
+        "Glob",
+        "ListDir",
+        "WebSearch",
+        "WebFetch",
+    ]
+    assert [_args(s) for s in tools] == [
+        {"file_path": "/Users/dev/project/a.py"},
+        {"file_path": "/Users/dev/project/b.py"},
+        {"file_path": "/Users/dev/project/c.py"},
+        {"file_path": "/Users/dev/project", "pattern": "needle", "glob": "*.py"},
+        {"file_path": "/Users/dev/project", "pattern": "*.py", "glob": "vendor/**"},
+        {"file_path": "/Users/dev/project"},
+        {},
+        {"url": "https://example.com/doc"},
+    ]
+    dumped = json.dumps([s.attributes for s in tools], default=str)
+    assert "SECRET" not in dumped
+
+
 def test_unlisted_args_and_tools_carry_no_values():
     data = _log(
         _prompt(),
         _planner(
             _call("run_command", CommandLine="ls", toolSummary="SECRET-SUMMARY", toolAction="SECRET-ACTION"),
             _call("invoke_subagent", Prompt="SECRET-PROMPT", Role="SECRET-ROLE", TypeName="research"),
-            _call("grep_search", Query="SECRET-QUERY", SearchPath="/p"),
+            _call("grep_search", Query="needle", SearchPath="/p", explanation="SECRET-QUERY"),
             _call("brand_new_tool", Anything="SECRET-ANY"),
             _call("read_file", Path=["not", "a", "string"]),
         ),
     )
     tools = _tools(parse_antigravity(data, "t")[1])
     assert [s.name for s in tools] == ["Bash", "Task", "Grep", "brand_new_tool", "Read"]
-    assert [_args(s) for s in tools] == [{"command": "ls"}, {"subagent_type": "research"}, {}, {}, {}]
+    assert [_args(s) for s in tools] == [
+        {"command": "ls"},
+        {"subagent_type": "research"},
+        {"file_path": "/p", "pattern": "needle"},
+        {},
+        {},
+    ]
     assert "SECRET" not in json.dumps([s.attributes for s in tools], default=str)
 
 
@@ -543,6 +617,31 @@ def test_windows_workspace_uri_gives_a_drive_path(tmp_path):
     source._build_index()
     assert source.get_cwd(sid) == "C:/Users/dev/project"
     assert source.get_project_name(sid) == "project"
+
+
+def test_malformed_workspace_uri_skips_that_row_only(tmp_path):
+    """``file://[bad`` makes urlsplit raise. That row is dropped; the index continues."""
+    home = _antigravity_home(tmp_path, names=("read_explain", "failed_edit", "subagent_child"))
+    (home / "conversation_summaries.db").unlink()
+    _write_summaries(
+        home,
+        [
+            (IDS["read_explain"], json.dumps(["file://[bad", "file:///Users/dev/kept"]), IDS["subagent_parent"], 1),
+            (IDS["failed_edit"], json.dumps(["file:///Users/dev/project"]), "", 0),
+            (IDS["subagent_child"], json.dumps(["file:///Users/dev/child"]), IDS["subagent_parent"], 1),
+        ],
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], antigravity_homes=[home])
+    index = source._build_index()
+    assert len(index) == 3
+    bad = f"local:antigravity-cli:{IDS['read_explain']}"
+    good = f"local:antigravity-cli:{IDS['failed_edit']}"
+    child = f"local:antigravity-cli:{IDS['subagent_child']}"
+    assert source.get_cwd(bad) is None
+    assert "harness.parent_session_id" not in source.get_spans_by_session(bad)[0].attributes
+    assert source.get_cwd(good) == "/Users/dev/project"
+    assert source.get_cwd(child) == "/Users/dev/child"
+    assert source.get_spans_by_session(child)[0].attributes["harness.parent_session_id"].endswith(IDS["subagent_parent"])
 
 
 def test_missing_or_unusable_summaries_leave_cwd_empty(tmp_path):

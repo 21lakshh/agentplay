@@ -82,13 +82,26 @@ _STEP_TYPES = ("USER_INPUT", "PLANNER_RESPONSE", "GENERIC", "SYSTEM_MESSAGE")
 
 # The only args that reach `input.value`, renamed to the canonical keys the map
 # builder reads. Everything else (`toolSummary`, `toolAction`, a subagent's
-# `Prompt`, `send_message`'s `Message`, line ranges, async flags) is dropped,
-# and so is every arg of a tool not listed here.
+# `Prompt`, `send_message`'s `Message`, line ranges, async flags, file text)
+# is dropped, and so is every arg of a tool not listed here.
+#
+# The aliased names below were not used in a captured session. Their keys come
+# from the jsonschema struct tags in the agy 1.4.6 binary. Only path and
+# pattern keys are kept: `CodeContent`, `TargetContent`, `ReplacementContent`,
+# `Instruction` and `explanation` are file or prompt text. `search_web`'s
+# `Query` is a web search phrase, not a file pattern, so that tool stays empty.
 _ARG_KEYS: dict[str, dict[str, str]] = {
     "read_file": {"Path": "file_path"},
     "view_file": {"AbsolutePath": "file_path"},
     "write_file": {"Path": "file_path", "Content": "content"},
+    "write_to_file": {"TargetFile": "file_path"},
     "edit_file": {"Path": "file_path", "Target": "old_string", "Replacement": "new_string"},
+    "replace_file_content": {"TargetFile": "file_path"},
+    "multi_replace_file_content": {"TargetFile": "file_path"},
+    "grep_search": {"SearchPath": "file_path", "Query": "pattern", "Includes": "glob"},
+    "find_by_name": {"SearchDirectory": "file_path", "Pattern": "pattern", "Excludes": "glob"},
+    "list_dir": {"DirectoryPath": "file_path"},
+    "read_url_content": {"Url": "url"},
     "run_command": {"CommandLine": "command", "Cwd": "workdir"},
     "invoke_subagent": {"TypeName": "subagent_type", "Model": "model"},
 }

@@ -1271,10 +1271,15 @@ def _antigravity_summaries(home: Path) -> dict[str, _AntigravitySummary]:
         except ValueError:
             uris = None
         cwd = None
-        for uri in uris if isinstance(uris, list) else []:
-            cwd = _path_from_file_uri(uri)
-            if cwd:
-                break
+        try:
+            for uri in uris if isinstance(uris, list) else []:
+                cwd = _path_from_file_uri(uri)
+                if cwd:
+                    break
+        except ValueError:
+            # urlsplit rejects a host like "[bad". Drop the row so one bad URI
+            # cannot abort discovery of every other conversation.
+            continue
         parent = parent_id if isinstance(parent_id, str) and parent_id else None
         out[conversation_id] = _AntigravitySummary(cwd=cwd, parent_id=parent)
     return out
