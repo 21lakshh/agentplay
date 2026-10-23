@@ -16,6 +16,9 @@ returns the agent type by sniffing for marker lines:
 - Kiro: synthesized header line with `type="kiro_session"`.
 - Gemini CLI: header line with `sessionId` + `projectHash` and no `type`, or a
   `type="gemini"` message (`~/.gemini/tmp/<project>/chats/session-*.jsonl`).
+- Antigravity CLI: step lines with an int `step_index`, a `source` and a step
+  `type` (`~/.gemini/antigravity-cli/brain/<uuid>/.system_generated/logs/
+  transcript_full.jsonl`).
 - opencode: materialized records carrying a `message` object and a `parts` list.
 
 Each parser exposes `parse_X(data, trace_id, user_id=None,
@@ -26,6 +29,7 @@ per-tool tool spans - so downstream code doesn't branch on agent.
 
 from __future__ import annotations
 
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import parse_antigravity
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
     AgentType,
     detect_agent,
@@ -49,6 +53,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode impo
 __all__ = [
     "AgentType",
     "detect_agent",
+    "parse_antigravity",
     "parse_claude_code",
     "parse_codex",
     "parse_copilot",

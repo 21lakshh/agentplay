@@ -1,5 +1,7 @@
 """Local filesystem source — walks ~/.claude / ~/.codex / ~/.gemini / Copilot dirs.
 
+Also walks ~/.gemini/antigravity-cli (Antigravity CLI step logs).
+
 Indexes JSONL session files under per-agent homes, detects the agent
 from the file head, and emits the universal `SpanData` shape via the
 matching parser. Multi-agent by design — drop a Codex session next to
@@ -17,7 +19,11 @@ import logging
 import os
 from pathlib import Path
 import re
+import shutil
+import sqlite3
+import tempfile
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from agentplay._core.ingestion.coding_agent._paths import to_posix
 from agentplay._core.ingestion.coding_agent._sources._base import (
@@ -34,6 +40,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
     parse_cursor_store,
+    parse_antigravity,
     parse_gemini,
     parse_kiro,
     parse_opencode,
@@ -1192,6 +1199,87 @@ def _cwd_from_gemini_project(jsonl_file: Path, header: dict | None) -> str | Non
     return root
 
 
+def _path_from_file_uri(uri: object) -> str | None:
+    """A local path from a ``file://`` URI, the same on every OS.
+
+    ``file:///Users/dev/project`` gives ``/Users/dev/project`` and
+    ``file:///C:/Users/dev/project`` gives ``C:/Users/dev/project`` (no leading
+    slash before a drive letter), whichever OS reads it: the session may have
+    been recorded on another machine. A host part (``file://server/share``) is
+    kept as a UNC-style ``//server/share`` prefix.
+    """
+    if not isinstance(uri, str) or not uri.startswith("file:"):
+        return None
+    parts = urlsplit(uri)
+    path = unquote(parts.path)
+    if re.match(r"^/[A-Za-z]:", path):
+        path = path[1:]
+    if parts.netloc and parts.netloc != "localhost":
+        path = f"//{parts.netloc}{path}"
+    return path or None
+
+
+@dataclass(frozen=True)
+class _AntigravitySummary:
+    """The structural columns of one `conversation_summaries` row."""
+
+    cwd: str | None
+    parent_id: str | None
+
+
+# Only structural columns. `title`, `preview` and `raw_summary` are prompt or
+# model text and are never selected.
+_ANTIGRAVITY_SUMMARY_SQL = (
+    "SELECT conversation_id, workspace_uris, parent_conversation_id FROM conversation_summaries"
+)
+
+
+def _antigravity_summaries(home: Path) -> dict[str, _AntigravitySummary]:
+    """cwd and parent conversation per conversation id, from `conversation_summaries.db`.
+
+    The live database is in WAL mode and may be open in `agy`, so it is copied
+    (with its `-wal` / `-shm` files when present) to a temporary directory and
+    opened read-only there. Missing or unreadable: an empty dict, and sessions
+    are indexed without a cwd.
+    """
+    db = home / "conversation_summaries.db"
+    if not db.is_file():
+        return {}
+    rows: list[tuple] = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="agentplay-antigravity-") as tmp:
+            tmp_dir = Path(tmp)
+            for suffix in ("", "-wal", "-shm"):
+                src = db.with_name(db.name + suffix)
+                if src.is_file():
+                    shutil.copyfile(src, tmp_dir / src.name)
+            conn = sqlite3.connect(f"{(tmp_dir / db.name).as_uri()}?mode=ro", uri=True)
+            try:
+                rows = conn.execute(_ANTIGRAVITY_SUMMARY_SQL).fetchall()
+            finally:
+                # Closed before the directory is removed: Windows cannot delete an open file.
+                conn.close()
+    except (OSError, sqlite3.Error) as exc:
+        logger.debug("antigravity-cli: conversation summaries unreadable: %s", exc)
+        return {}
+    out: dict[str, _AntigravitySummary] = {}
+    for conversation_id, workspace_uris, parent_id in rows:
+        if not isinstance(conversation_id, str) or not conversation_id:
+            continue
+        try:
+            uris = json.loads(workspace_uris) if isinstance(workspace_uris, str) else None
+        except ValueError:
+            uris = None
+        cwd = None
+        for uri in uris if isinstance(uris, list) else []:
+            cwd = _path_from_file_uri(uri)
+            if cwd:
+                break
+        parent = parent_id if isinstance(parent_id, str) and parent_id else None
+        out[conversation_id] = _AntigravitySummary(cwd=cwd, parent_id=parent)
+    return out
+
+
 def _project_from_cwd(cwd: str) -> str | None:
     """Project name from the transcript's cwd.
 
@@ -1319,6 +1407,7 @@ class LocalSource:
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
         gemini_homes: list[Path] | None = None,
+        antigravity_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1355,6 +1444,11 @@ class LocalSource:
         # comes from the header's `sessionId`, the cwd from the project
         # folder's `.project_root` (see `_cwd_from_gemini_project`).
         self.gemini_homes = gemini_homes or []
+        # Antigravity CLI keeps one step log per conversation:
+        # `<home>/brain/<uuid>/.system_generated/logs/transcript_full.jsonl`.
+        # cwd and subagent parent come from `<home>/conversation_summaries.db`
+        # (see `_antigravity_summaries`).
+        self.antigravity_homes = antigravity_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1379,6 +1473,7 @@ class LocalSource:
             *self.copilot_homes,
             *self.copilot_vscode_homes,
             *self.gemini_homes,
+            *self.antigravity_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1595,6 +1690,21 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Antigravity CLI: `<home>/brain/<uuid>/.system_generated/logs/transcript_full.jsonl`.
+        # Only `brain/` is walked, so Gemini CLI's `tmp/` (a sibling under
+        # `~/.gemini`) and the Antigravity IDE's `~/.gemini/antigravity/` are
+        # never reached; `detect_agent` rejects anything else.
+        for home in self.antigravity_homes:
+            brain_dir = home / "brain"
+            if not brain_dir.is_dir():
+                logger.debug("Skipping non-existent path: %s", brain_dir)
+                continue
+            summaries = _antigravity_summaries(home)
+            for jsonl_file in brain_dir.glob("*/.system_generated/logs/transcript_full.jsonl"):
+                ref = self._index_antigravity_file(jsonl_file, home=home, summaries=summaries)
+                if ref:
+                    _index_put(index, ref[0], ref[1], newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1607,7 +1717,8 @@ class LocalSource:
             + len(self.kiro_homes)
             + len(self.copilot_homes)
             + len(self.copilot_vscode_homes)
-            + len(self.gemini_homes),
+            + len(self.gemini_homes)
+            + len(self.antigravity_homes),
         )
         return index
 
@@ -1987,6 +2098,58 @@ class LocalSource:
             project_name=project_name,
             cwd=cwd,
             home=home,
+        )
+
+    def _index_antigravity_file(
+        self,
+        jsonl_file: Path,
+        *,
+        home: Path,
+        summaries: dict[str, _AntigravitySummary],
+    ) -> tuple[str, _FileRef] | None:
+        """Index one Antigravity CLI `transcript_full.jsonl`."""
+        if not jsonl_file.is_file():
+            return None
+        size = jsonl_file.stat().st_size
+        if size == 0:
+            self._record_discovery("antigravity-cli", "empty_or_unreadable")
+            return None
+        try:
+            head = _read_head(jsonl_file, stop_when=_agent_detected)
+        except OSError:
+            self._record_discovery("antigravity-cli", "empty_or_unreadable")
+            return None
+
+        agent = detect_agent(head)
+        if agent is None:
+            logger.warning(
+                "agent detection failed for %s (%d bytes); session skipped",
+                jsonl_file,
+                size,
+            )
+            self._record_discovery("antigravity-cli", "detection_failed")
+            return None
+        if agent != AgentType.ANTIGRAVITY_CLI:
+            self._record_discovery("antigravity-cli", "different_agent")
+            return None
+
+        # brain/<uuid>/.system_generated/logs/transcript_full.jsonl
+        native_id = jsonl_file.parents[2].name
+        session_id = f"local:{agent}:{native_id}"
+        mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
+        summary = summaries.get(native_id)
+        cwd = summary.cwd if summary else None
+        parent = summary.parent_id if summary else None
+
+        self._record_discovery("antigravity-cli", "indexed")
+        return session_id, _FileRef(
+            path=jsonl_file,
+            agent=agent,
+            mtime=mtime,
+            project_name=_project_from_cwd(cwd) if cwd else None,
+            cwd=cwd,
+            home=home,
+            parent_session_id=f"local:{agent}:{parent}" if parent else None,
         )
 
     def _index_copilot_file(
@@ -2401,6 +2564,7 @@ class LocalSource:
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
             AgentType.GEMINI_CLI: parse_gemini,
+            AgentType.ANTIGRAVITY_CLI: parse_antigravity,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
@@ -2419,9 +2583,10 @@ class LocalSource:
             user_id=user_id,
             project_name=ref.project_name,
         )
-        if ref.agent == AgentType.GEMINI_CLI and ref.cwd:
-            # Gemini CLI's transcript records no cwd; the indexer read the
-            # project root from `.project_root`. Every call ran there.
+        if ref.agent in (AgentType.GEMINI_CLI, AgentType.ANTIGRAVITY_CLI) and ref.cwd:
+            # Neither transcript records a cwd; the indexer read the project
+            # root from Gemini's `.project_root` or Antigravity's
+            # `conversation_summaries.db`. Every call ran there.
             for span in spans:
                 if span.parent_id is not None and not span.attributes.get("cwd"):
                     span.attributes["cwd"] = ref.cwd
@@ -2429,6 +2594,11 @@ class LocalSource:
         root = next((span for span in spans if span.parent_id is None), None)
         if root is not None:
             root.attributes.update({"git.branch": branch, "git.branches": branches})
+            if ref.parent_session_id:
+                # A subagent's own conversation (Antigravity CLI): the map
+                # builder marks it a subagent session under its parent.
+                root.attributes["harness.session_role"] = "subagent"
+                root.attributes["harness.parent_session_id"] = ref.parent_session_id
             # A cloud-run session stores selected-repository metadata in a sidecar
             # beside the unmodified transcript, whose remote cwd may be absent.
             repo = metadata.get("repo_name") if isinstance(metadata, dict) else None
@@ -2530,7 +2700,17 @@ class LocalSource:
 class _FileRef:
     """Internal pointer: session_id → file path + index-time metadata."""
 
-    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "path", "project_name", "subformat")
+    __slots__ = (
+        "agent",
+        "branch",
+        "cwd",
+        "home",
+        "mtime",
+        "parent_session_id",
+        "path",
+        "project_name",
+        "subformat",
+    )
 
     def __init__(
         self,
@@ -2542,6 +2722,7 @@ class _FileRef:
         branch: str | None = None,
         home: Path | None = None,
         subformat: str | None = None,
+        parent_session_id: str | None = None,
     ):
         self.path = path
         self.agent = agent
@@ -2562,6 +2743,9 @@ class _FileRef:
         # The home dir under which this file was discovered — used to
         # look up the manifest identity for that home.
         self.home = home
+        # Session id of the conversation that spawned this one, for agents
+        # that store a subagent as its own conversation (Antigravity CLI).
+        self.parent_session_id = parent_session_id
 
 
 __all__ = ["LocalSource", "ManifestIdentity"]

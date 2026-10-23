@@ -25,6 +25,10 @@ class AgentType(StrEnum):
     CURSOR = "cursor"
     KIRO = "kiro"
     GEMINI_CLI = "gemini-cli"
+    ANTIGRAVITY_CLI = "antigravity-cli"
+
+
+_ANTIGRAVITY_STEP_TYPES = ("USER_INPUT", "PLANNER_RESPONSE", "GENERIC", "SYSTEM_MESSAGE")
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -84,6 +88,17 @@ def detect_agent(data: bytes) -> AgentType | None:
             return AgentType.GEMINI_CLI
         if line_type == "gemini" and isinstance(obj.get("id"), str):
             return AgentType.GEMINI_CLI
+
+        # Antigravity CLI (`agy`): every step-log line carries an int
+        # `step_index`, a `source` string and a step `type`. No other agent
+        # writes `step_index`, and these upper-case types are agy's own.
+        if (
+            line_type in _ANTIGRAVITY_STEP_TYPES
+            and isinstance(obj.get("step_index"), int)
+            and not isinstance(obj.get("step_index"), bool)
+            and isinstance(obj.get("source"), str)
+        ):
+            return AgentType.ANTIGRAVITY_CLI
 
         # Codex: session_meta with codex originator.
         if line_type == "session_meta":
