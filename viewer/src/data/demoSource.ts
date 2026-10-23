@@ -16,12 +16,22 @@ type DemoRow = SessionExplorerSession & { file?: string };
  * to the page. `root` is resolved against the page, so the build works from
  * any path.
  */
+/**
+ * A demo file URL, refused unless it is on the page's own origin: `file`
+ * entries come from `index.json`, so they must not point the page elsewhere.
+ */
+export function sameOriginUrl(path: string, base: URL): URL {
+  const url = new URL(path, base);
+  if (url.origin !== base.origin) throw new SessionExplorerError('demo file is not on this site', 'not_found');
+  return url;
+}
+
 export function demoSource(root = 'demo/'): SessionMapSource {
   const base = new URL(root, document.baseURI);
   let raw: Promise<{ sessions?: unknown[] }> | null = null;
   let index: Promise<DemoRow[]> | null = null;
   const loadRaw = () =>
-    (raw ??= fetch(new URL('index.json', base))
+    (raw ??= fetch(sameOriginUrl('index.json', base))
       .then((r) => {
         if (!r.ok) throw new SessionExplorerError('demo index missing', 'not_found');
         return r.json() as Promise<{ sessions?: unknown[] }>;
@@ -77,7 +87,7 @@ export function demoSource(root = 'demo/'): SessionMapSource {
       return insightsStatsSchema.parse({ sessions: rows });
     },
     async fetchMap(meta) {
-      const r = await fetch(meta.url);
+      const r = await fetch(sameOriginUrl(meta.url, base));
       if (!r.ok) throw new SessionExplorerError(`demo map ${r.status}`, 'not_found');
       return parseMapBytes(new Uint8Array(await r.arrayBuffer()));
     },
