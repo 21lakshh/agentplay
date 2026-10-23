@@ -1,5 +1,14 @@
 # agentplay
 
+<p>
+  <a href="https://pypi.org/project/agentplay/"><img alt="PyPI" src="https://img.shields.io/pypi/v/agentplay"></a>
+  <a href="https://pypi.org/project/agentplay/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/agentplay"></a>
+  <a href="https://pepy.tech/project/agentplay"><img alt="Downloads" src="https://static.pepy.tech/badge/agentplay/month"></a>
+  <a href="https://github.com/Entelligence-AI/agentplay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Entelligence-AI/agentplay/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/badge/license-Apache%202.0-blue"></a>
+  <a href="https://github.com/Entelligence-AI/agentplay/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Entelligence-AI/agentplay?style=social"></a>
+</p>
+
 **See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode and Kiro.**
 
 ```bash
@@ -11,6 +20,8 @@ That one command finds the agent sessions already on your machine, builds a reda
 ![The session explorer replaying a Claude Code session: a radial map of every file, tool, MCP server, subagent and model the session touched, the replay timeline underneath, and details on the right](docs/images/explorer-light.png)
 
 <sub>Screenshot of the bundled demo session (synthetic data). Dark mode: [docs/images/explorer-dark.png](docs/images/explorer-dark.png).</sub>
+
+If agentplay shows you something about your agent you didn't know, a ⭐ helps other people find it.
 
 ---
 
@@ -289,13 +300,33 @@ Test suites:
 
 ## Contributing
 
-Contributions are very welcome. The most valuable ones are:
+Contributions are very welcome, and you don't need to know the whole codebase to make one. The most valuable are:
 
-1. **A parser for another agent**: Gemini CLI, Amp, Cline, Roo, Windsurf or Aider.
-2. **Viewer improvements** that make a session easier to read.
-3. **Fixture transcripts** for an agent version that broke parsing, with personal content removed.
+1. **A parser for another agent**: Gemini CLI, Amp, Cline, Roo, Windsurf or Aider. Each is one file plus a few registration lines; [CONTRIBUTING.md](CONTRIBUTING.md#adding-an-agent) walks through it step by step, and [`codex.py`](python/src/agentplay/_core/ingestion/coding_agent/_sources/local/parsers/codex.py) is a good one to copy.
+2. **Fixture transcripts** for an agent version that broke parsing, with personal content removed. Open a [parser bug](https://github.com/Entelligence-AI/agentplay/issues/new?template=bug_report.yml) and attach one.
+3. **Viewer improvements** that make a session easier to read. The viewer runs on demo data with `pnpm dev` in `viewer/`, no sessions needed.
+4. **Docs and install fixes**, especially for Windows and WSL.
 
-[CONTRIBUTING.md](CONTRIBUTING.md) walks through each of these, the privacy rules every change must keep, and how to run the suites. Report security issues privately; see [SECURITY.md](SECURITY.md).
+Getting started:
+
+```bash
+git clone https://github.com/Entelligence-AI/agentplay && cd agentplay
+make setup && make check    # everything CI runs, locally
+```
+
+- Looking for somewhere to start? Try a [good first issue](https://github.com/Entelligence-AI/agentplay/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or one marked [help wanted](https://github.com/Entelligence-AI/agentplay/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
+- Want an agent supported but can't write the parser? [Request it](https://github.com/Entelligence-AI/agentplay/issues/new?template=agent_request.yml) and say where it stores sessions.
+- For a new feature, open an issue first so we can agree it fits.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) has the privacy rules every change must keep and how to run the suites. Report security issues privately; see [SECURITY.md](SECURITY.md).
+
+### Contributors
+
+<a href="https://github.com/Entelligence-AI/agentplay/graphs/contributors"><img alt="Contributors" src="https://contrib.rocks/image?repo=Entelligence-AI/agentplay"></a>
+
+### Star history
+
+<a href="https://star-history.com/#Entelligence-AI/agentplay&Date"><img alt="Star history chart" src="https://api.star-history.com/svg?repos=Entelligence-AI/agentplay&type=Date" width="600"></a>
 
 ## Known limitations
 
