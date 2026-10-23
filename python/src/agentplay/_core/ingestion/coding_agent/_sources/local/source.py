@@ -1234,6 +1234,43 @@ _ANTIGRAVITY_SUMMARY_SQL = (
 )
 
 
+def _summary_file_stamp(path: Path) -> tuple[str, int | None, int | None]:
+    """`(name, size, mtime_ns)` for one summaries file, or `(name, None, None)` when absent."""
+    if not path.is_file():
+        return (path.name, None, None)
+    st = path.stat()
+    return (path.name, st.st_size, st.st_mtime_ns)
+
+
+def _antigravity_summary_files(db: Path) -> list[Path]:
+    return [db.with_name(db.name + suffix) for suffix in ("", "-wal", "-shm")]
+
+
+def _copy_antigravity_summaries(db: Path, tmp_dir: Path) -> None:
+    """Copy the db and its sidecars without opening the original.
+
+    `agy` may be writing the WAL while we copy. Stat size and mtime of the db,
+    `-wal`, and `-shm` before and after each attempt, and retry up to 3 times
+    when any of them changed (including a sidecar appearing or disappearing).
+    A snapshot that is still moving after that is used as-is.
+    """
+    files = _antigravity_summary_files(db)
+    for _ in range(3):
+        before = tuple(_summary_file_stamp(path) for path in files)
+        for src in files:
+            dest = tmp_dir / src.name
+            if src.is_file():
+                shutil.copyfile(src, dest)
+            elif dest.exists():
+                dest.unlink()
+        after = tuple(_summary_file_stamp(path) for path in files)
+        if before == after:
+            return
+    logger.debug(
+        "antigravity-cli: conversation summaries changed while copying; using the last copy"
+    )
+
+
 def _antigravity_summaries(home: Path) -> dict[str, _AntigravitySummary]:
     """cwd and parent conversation per conversation id, from `conversation_summaries.db`.
 
@@ -1249,10 +1286,7 @@ def _antigravity_summaries(home: Path) -> dict[str, _AntigravitySummary]:
     try:
         with tempfile.TemporaryDirectory(prefix="agentplay-antigravity-") as tmp:
             tmp_dir = Path(tmp)
-            for suffix in ("", "-wal", "-shm"):
-                src = db.with_name(db.name + suffix)
-                if src.is_file():
-                    shutil.copyfile(src, tmp_dir / src.name)
+            _copy_antigravity_summaries(db, tmp_dir)
             conn = sqlite3.connect(f"{(tmp_dir / db.name).as_uri()}?mode=ro", uri=True)
             try:
                 rows = conn.execute(_ANTIGRAVITY_SUMMARY_SQL).fetchall()
@@ -1268,7 +1302,7 @@ def _antigravity_summaries(home: Path) -> dict[str, _AntigravitySummary]:
             continue
         try:
             uris = json.loads(workspace_uris) if isinstance(workspace_uris, str) else None
-        except ValueError:
+        except (ValueError, RecursionError):
             uris = None
         cwd = None
         try:

@@ -26,6 +26,7 @@ tests build one from the real column schema with made-up rows.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +34,7 @@ from pathlib import Path
 import pytest
 
 from agentplay import builder, discover
+from agentplay._core.ingestion.coding_agent._sources.local import source as local_source
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -177,6 +179,18 @@ def test_read_session_keeps_only_the_prompt_and_the_path():
     assert {s.status_code for s in _tools(spans)} == {"OK"}
     assert spans[0].attributes["harness.agent_session_id"] == IDS["read_explain"]
     assert spans[0].attributes["llm.model_name"] == ""
+
+
+def test_session_end_reaches_a_later_tool_completion():
+    data = _log(
+        _prompt(),
+        _planner(_call("read_file", Path="/p/a.py")),
+        _result("Created At: 2026-10-23T10:00:02Z\nCompleted At: 2026-10-23T10:05:00Z\nok"),
+    )
+    trace, spans = parse_antigravity(data, "t")
+    end = datetime(2026, 10, 23, 10, 5, tzinfo=UTC)
+    assert trace.end_time == end
+    assert spans[0].end_time == end
 
 
 def test_edit_and_run_normalizes_args():
@@ -652,6 +666,73 @@ def test_malformed_workspace_uri_skips_that_row_only(tmp_path):
     assert source.get_cwd(good) == "/Users/dev/project"
     assert source.get_cwd(child) == "/Users/dev/child"
     assert source.get_spans_by_session(child)[0].attributes["harness.parent_session_id"].endswith(IDS["subagent_parent"])
+
+
+def test_deeply_nested_workspace_uris_do_not_abort_discovery(tmp_path, monkeypatch):
+    nested = '{"a":' * 1200 + "0" + "}" * 1200
+    try:
+        json.loads(nested)
+    except RecursionError:
+        pass
+    else:
+        real_loads = local_source.json.loads
+
+        def loads(raw, *args, **kwargs):
+            text = raw if isinstance(raw, str) else bytes(raw).decode("utf-8", "replace")
+            if isinstance(text, str) and text.startswith('{"a":' * 40):
+                raise RecursionError("maximum recursion depth exceeded")
+            return real_loads(raw, *args, **kwargs)
+
+        monkeypatch.setattr(local_source.json, "loads", loads)
+
+    home = _antigravity_home(tmp_path, names=("read_explain", "failed_edit"))
+    (home / "conversation_summaries.db").unlink()
+    _write_summaries(
+        home,
+        [
+            (IDS["read_explain"], nested, "", 0),
+            (IDS["failed_edit"], json.dumps(["file:///Users/dev/project"]), "", 0),
+        ],
+    )
+    source = LocalSource(claude_code_homes=[], codex_homes=[], antigravity_homes=[home])
+    index = source._build_index()
+    assert len(index) == 2
+    bad = f"local:antigravity-cli:{IDS['read_explain']}"
+    good = f"local:antigravity-cli:{IDS['failed_edit']}"
+    assert source.get_cwd(bad) is None
+    assert source.get_cwd(good) == "/Users/dev/project"
+
+
+def test_summaries_copy_stops_after_three_changing_snapshots(tmp_path, monkeypatch, caplog):
+    home = _antigravity_home(tmp_path, names=("read_explain",))
+    db = home / "conversation_summaries.db"
+    original = db.read_bytes()
+    wal = db.with_name(db.name + "-wal")
+    shm = db.with_name(db.name + "-shm")
+    wal.write_bytes(b"wal")
+    shm.write_bytes(b"shm")
+    copies: list[str] = []
+    real_copy = local_source.shutil.copyfile
+
+    def copyfile(src, dst, *args, **kwargs):
+        real_copy(src, dst, *args, **kwargs)
+        name = Path(src).name
+        copies.append(name)
+        # A writer grows the wal on every copy, so the before/after stamps
+        # never match. The scan must stop at three attempts and keep the copy.
+        if name == db.name:
+            wal.write_bytes(b"wal" + b"x" * copies.count(name))
+
+    monkeypatch.setattr(local_source.shutil, "copyfile", copyfile)
+    caplog.set_level(logging.DEBUG, logger=local_source.logger.name)
+    source = LocalSource(claude_code_homes=[], codex_homes=[], antigravity_homes=[home])
+    source._build_index()
+    assert source.get_cwd(f"local:antigravity-cli:{IDS['read_explain']}") == "/Users/dev/project"
+    assert copies.count(db.name) == 3
+    assert copies.count(wal.name) == 3
+    assert copies.count(shm.name) == 3
+    assert "using the last copy" in caplog.text
+    assert db.read_bytes() == original
 
 
 def test_missing_or_unusable_summaries_leave_cwd_empty(tmp_path):

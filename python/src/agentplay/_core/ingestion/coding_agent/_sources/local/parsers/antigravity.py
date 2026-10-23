@@ -209,6 +209,11 @@ def parse_antigravity(
         if turn is not None and ts is not None and ts > turn["end"]:
             turn["end"] = ts
     _close_turn()
+    # A tool can finish after the step that recorded it. `Completed At` is
+    # that end, and it can be later than every step's created_at.
+    for span in all_spans:
+        if "tool.name" in span.attributes and span.end_time > session_end:
+            session_end = span.end_time
 
     root_span = SpanData(
         span_id=root_id,
