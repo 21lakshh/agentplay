@@ -7,6 +7,7 @@ Binds to 127.0.0.1 only. Serves the static viewer from the package's
 ``GET /api/sessions``          paged session rows (``from``, ``to``, ``search``, ``pageSize``, ``cursor``)
 ``GET /api/map``               one entry per ``session_id`` param, each with a ``url``
 ``GET /api/map-doc?id=...``    the map document itself
+``GET /api/stats``             session facts for the Insights view (``from``, ``to``: inclusive ``YYYY-MM-DD``)
 ``GET /api/account``           whether to offer the email signup card (see ``account.py``)
 ``GET /api/prompt-images?id=...``  per-turn metadata for images pasted into Claude Code prompts (this machine only)
 ``GET /api/prompt-image?id=...&turn=...&i=...``  one such image, read from the transcript on demand (this machine only)
@@ -38,7 +39,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, urlsplit
 
-from . import account, hook_detail, prompt_images
+from . import account, facts, hook_detail, prompt_images
 from .store import Store
 
 MAX_PAGE = 200
@@ -88,8 +89,13 @@ def _public_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         k: v
         for k, v in row.items()
-        if k not in ("key", "sourcePath", "sourceMtime", "signals", "imported", "taskTitles")
+        if k not in ("key", "sourcePath", "sourceMtime", "signals", "imported", "taskTitles", "facts", "factsVersion")
     }
+
+
+# What `/api/stats` sends per session besides its facts: enough to filter and
+# group (window, agent, repo, model) and to link back to the session.
+_STATS_FIELDS = ("sessionId", "sessionDate", "startedAt", "durationMs", "agentTool", "models", "repos")
 
 
 def _is_loopback(address: Any) -> bool:
@@ -193,6 +199,11 @@ class _Handler(BaseHTTPRequestHandler):
     # can tell "no sessions yet" from "no sessions".
     scanning: threading.Event | None = None
     lock = threading.Lock()
+    # Facts for rows written before facts existed (or by an older FACTS_VERSION),
+    # computed from the stored map on first read. Kept in memory, keyed by the
+    # map's content hash: the server never writes the index, which a background
+    # scan may be saving at the same moment. The next build persists them.
+    facts_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
 
     def log_message(self, fmt: str, *args: Any) -> None:  # quiet by default
         return
@@ -307,6 +318,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._maps(q)
             if url.path == "/api/map-doc":
                 return self._map_doc(q)
+            if url.path == "/api/stats":
+                return self._stats(q)
             if url.path == "/api/prompt-images":
                 return self._prompt_images(q)
             if url.path == "/api/prompt-image":
@@ -416,6 +429,31 @@ class _Handler(BaseHTTPRequestHandler):
             "nextCursor": _cursor_encode(start + size) if more else None,
             "hasMore": more,
         })
+
+    def _facts(self, row: dict[str, Any]) -> dict[str, Any] | None:
+        if row.get("factsVersion") == facts.FACTS_VERSION:
+            return row.get("facts")
+        sid = str(row.get("sessionId") or "")
+        key = (sid, str(row.get("contentHash") or ""))
+        if key not in self.facts_cache:
+            doc = self.store.get(sid)
+            self.facts_cache[key] = facts.stamp(doc)["facts"] if doc is not None else None
+        return self.facts_cache[key]
+
+    def _stats(self, q: dict[str, list[str]]) -> None:
+        lo = (q.get("from") or [""])[0]
+        hi = (q.get("to") or [""])[0]
+        out = []
+        for r in self._rows():
+            day = r.get("sessionDate") or ""
+            if (lo and day < lo) or (hi and day and day > hi):
+                continue
+            with self.lock:
+                f = self._facts(r)
+            if f is None:
+                continue
+            out.append({**{k: r.get(k) for k in _STATS_FIELDS}, "facts": f})
+        self._json({"success": True, "factsVersion": facts.FACTS_VERSION, "sessions": out})
 
     def _maps(self, q: dict[str, list[str]]) -> None:
         ids = (q.get("session_id") or [])[:20]

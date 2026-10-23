@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from . import __version__, builder, discover
+from . import __version__, builder, discover, facts
 from .store import Store
 
 logger = logging.getLogger("agentplay.pipeline")
@@ -68,6 +68,7 @@ def _row(
         "sourcePath": cand.path,
         "builtWith": __version__,
         "pathMode": (doc.get("session") or {}).get("pathMode") or "relative",
+        **facts.stamp(doc),
     }
 
 
@@ -126,6 +127,25 @@ def _sync_titles(store: Store, cand: discover.Candidate, source: Any, *, titles:
         row["taskTitles"] = discover.local_task_titles(cand, source)
         changed = True
     return changed
+
+
+def _sync_facts(store: Store, session_id: str) -> bool:
+    """Recompute an unchanged session's facts from its stored map when they are missing or stale.
+
+    The cheap pass behind ``facts.FACTS_VERSION``: no transcript is read, only
+    the map already on disk.
+
+    Returns:
+        True when the row was changed (the caller saves).
+    """
+    row = store.index.get(session_id)
+    if row is None or row.get("factsVersion") == facts.FACTS_VERSION:
+        return False
+    doc = store.get(session_id)
+    if doc is None:
+        return False
+    row.update(facts.stamp(doc))
+    return True
 
 
 def build_all(
@@ -193,7 +213,8 @@ def build_all(
         if not rebuild and store.is_fresh(c.session_id, c.mtime, built_with=__version__, path_mode=effective_mode):
             report.unchanged += 1
             report.by_agent[c.agent] += 1
-            _sync_titles(store, c, source, titles=titles)
+            if _sync_titles(store, c, source, titles=titles) | _sync_facts(store, c.session_id):
+                pending = True
             continue
         try:
             doc = discover.build_map(c, source, path_mode=path_mode, hmac_key=hmac_key, version=__version__)

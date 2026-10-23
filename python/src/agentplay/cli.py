@@ -284,7 +284,7 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 
 def cmd_import(args: argparse.Namespace) -> int:
-    from . import builder
+    from . import builder, facts
 
     st = Store()
     n = 0
@@ -306,7 +306,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         started = doc["session"]["startedAt"]
         st.put(doc, {**builder.summary(doc), "sessionId": sid, "sessionDate": started[:10],
                      "sessionTitle": args.title or None, "contentHash": builder.content_hash(doc),
-                     "imported": str(path)})
+                     "imported": str(path), **facts.stamp(doc)})
         n += 1
     st.save_index()
     print(f"Imported {n} map(s).")
