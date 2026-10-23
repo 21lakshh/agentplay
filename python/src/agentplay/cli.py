@@ -447,10 +447,12 @@ def cmd_autotune(args: argparse.Namespace) -> int:
                     autotune.save(st.base, cfg)
                     print(f"Autotune runs at most once a day, when a Claude Code session starts ({path}).")
         elif args.action == "off":
-            for repo in args.repo or list(autotune.config(st.base)["repos"]):
-                autotune.set_repo(st.base, repo, enabled=False)
-            if not args.repo:
-                autotune.uninstall_hook()
+            # One lock for the whole opt-out, as for `on`: a daily run cannot land halfway through it.
+            with fixes.write_lock(st.base):
+                for repo in args.repo or list(autotune.config(st.base)["repos"]):
+                    autotune.set_repo(st.base, repo, enabled=False)
+                if not args.repo:
+                    autotune.uninstall_hook()
             print("Autotune is off.")
         elif args.action == "run":
             res = autotune.run(st, force=not args.daily)
