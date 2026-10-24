@@ -71,7 +71,7 @@ def test_table_sizes_are_pinned() -> None:
     # These counts are pinned; a changed count means a row was added or dropped on purpose -- update here.
     # copilot-vscode's 12 rows are pinned against real tool names; gemini-cli's
     # 12 against real sessions plus the 0.65 bundle's tool-name constants.
-    assert {a: len(t) for a, t in tt.TOOL_ALIASES.items()} == {
+    assert {a: len(t) for a, t in tt.TOOL_ALIASES.items() if a != "antigravity-cli"} == {  # own test pins it
         "codex": 7,
         "cursor": 26,
         "copilot": 23,

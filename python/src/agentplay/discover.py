@@ -14,6 +14,7 @@ Cursor             ``~/.cursor`` agent transcripts, ``chats/*/store.db``,  decod
 OpenCode           ``~/.local/share/opencode/opencode.db``                decoded
 Kiro               ``~/.kiro/sessions``                                   decoded
 Gemini CLI         ``~/.gemini/tmp/*/chats/session-*.jsonl``              file
+Antigravity CLI    ``~/.gemini/antigravity-cli/brain/*`` step logs        file
 =================  =====================================================  ===========
 
 "Decoded" agents keep sessions in a database; :mod:`agentplay.materialize`
@@ -43,7 +44,8 @@ from ._util import captured
 
 logger = logging.getLogger("agentplay.discover")
 
-AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli")
+AGENTS = ("claude-code", "codex", "cursor", "copilot", "copilot-vscode", "opencode", "kiro", "gemini-cli",
+          "antigravity-cli")
 
 # Transcripts above this size are skipped rather than parsed (a 20k-event map cap
 # applies anyway; this keeps one pathological file from stalling a run).
@@ -86,6 +88,7 @@ class Homes:
     opencode: list[Path]
     kiro: list[Path]
     gemini_cli: list[Path]
+    antigravity_cli: list[Path]
 
     @classmethod
     def default(cls) -> Homes:
@@ -99,6 +102,7 @@ class Homes:
             opencode=_homes_from_env("AGENTPLAY_OPENCODE_HOMES", _opencode_data_dirs()),
             kiro=_homes_from_env("AGENTPLAY_KIRO_HOMES", ["~/.kiro"]),
             gemini_cli=_homes_from_env("AGENTPLAY_GEMINI_HOMES", ["~/.gemini"]),
+            antigravity_cli=_homes_from_env("AGENTPLAY_ANTIGRAVITY_HOMES", ["~/.gemini/antigravity-cli"]),
         )
 
     def present(self) -> dict[str, list[Path]]:
@@ -113,6 +117,7 @@ class Homes:
             ("opencode", self.opencode),
             ("kiro", self.kiro),
             ("gemini-cli", self.gemini_cli),
+            ("antigravity-cli", self.antigravity_cli),
         ):
             found = [p for p in paths if p.is_dir()]
             if found:
@@ -193,6 +198,7 @@ def local_source(homes: Homes, agents: set[str]) -> Any:
         copilot_homes=pick("copilot", homes.copilot),
         copilot_vscode_homes=pick("copilot-vscode", homes.copilot_vscode),
         gemini_homes=pick("gemini-cli", homes.gemini_cli),
+        antigravity_homes=pick("antigravity-cli", homes.antigravity_cli),
     )
 
 
@@ -269,6 +275,9 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
     spans = source.get_spans_by_session(c.session_id)
     if not spans:
         raise SkipSession("no_spans")
+    # A subagent stored as its own conversation (Antigravity CLI) carries its role and parent on the root span.
+    root = next((s for s in spans if s.parent_id is None), None)
+    root_attrs = root.attributes if root is not None else {}
     return builder.build_map_from_spans(
         spans,
         session_id=c.session_id,
@@ -276,6 +285,8 @@ def build_map(c: Candidate, source: Any, *, path_mode: str = "relative",
         path_mode=path_mode,
         hmac_key=hmac_key,
         cli_version=version,
+        role=root_attrs.get("harness.session_role") or None,
+        parent_session_id=root_attrs.get("harness.parent_session_id") or None,
         resolver=resolver,
         started_at_hint=c.mtime or None,
     )

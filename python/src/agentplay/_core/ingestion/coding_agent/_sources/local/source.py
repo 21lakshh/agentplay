@@ -25,6 +25,10 @@ from agentplay._core.ingestion.coding_agent._sources._base import (
     OversizedSessionError,
 )
 from agentplay.discover import MAX_SOURCE_BYTES
+from agentplay._core.ingestion.coding_agent._sources.local.antigravity_index import (
+    TRANSCRIPT_GLOB as ANTIGRAVITY_TRANSCRIPT_GLOB,
+    index_antigravity_home,
+)
 from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     AgentType,
     detect_agent,
@@ -34,6 +38,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers import (
     parse_copilot_vscode,
     parse_cursor_agent_transcript,
     parse_cursor_store,
+    parse_antigravity,
     parse_gemini,
     parse_kiro,
     parse_opencode,
@@ -1319,6 +1324,7 @@ class LocalSource:
         copilot_homes: list[Path] | None = None,
         copilot_vscode_homes: list[Path] | None = None,
         gemini_homes: list[Path] | None = None,
+        antigravity_homes: list[Path] | None = None,
     ) -> None:
         self.claude_code_homes = claude_code_homes
         self.codex_homes = codex_homes
@@ -1355,6 +1361,8 @@ class LocalSource:
         # comes from the header's `sessionId`, the cwd from the project
         # folder's `.project_root` (see `_cwd_from_gemini_project`).
         self.gemini_homes = gemini_homes or []
+        # Antigravity CLI step logs; discovery lives in antigravity_index.py.
+        self.antigravity_homes = antigravity_homes or []
         # Per-home identity stamp (`<home>/_manifest/*.json`). It carries a
         # user_uuid/email/github_username used to detect duplicated sessions
         # that belong to different owners. Missing manifest → empty dict.
@@ -1379,6 +1387,7 @@ class LocalSource:
             *self.copilot_homes,
             *self.copilot_vscode_homes,
             *self.gemini_homes,
+            *self.antigravity_homes,
         ):
             identity = _load_manifest_identity(home)
             if identity is not None:
@@ -1595,6 +1604,12 @@ class LocalSource:
                 if ref:
                     _index_put(index, ref[0], ref[1], newest)
 
+        # Antigravity CLI: only `<home>/brain/` is walked (see antigravity_index.py).
+        for home in self.antigravity_homes:
+            transcripts = home.glob(ANTIGRAVITY_TRANSCRIPT_GLOB)
+            for sid, fields in index_antigravity_home(home, transcripts, self._record_discovery):
+                _index_put(index, sid, _FileRef(**fields), newest)
+
         _carry_collision_mtimes(index, newest)
         self._file_index = index
         logger.info(
@@ -1607,7 +1622,8 @@ class LocalSource:
             + len(self.kiro_homes)
             + len(self.copilot_homes)
             + len(self.copilot_vscode_homes)
-            + len(self.gemini_homes),
+            + len(self.gemini_homes)
+            + len(self.antigravity_homes),
         )
         return index
 
@@ -2401,6 +2417,7 @@ class LocalSource:
             AgentType.CURSOR: parse_cursor_store,
             AgentType.KIRO: parse_kiro,
             AgentType.GEMINI_CLI: parse_gemini,
+            AgentType.ANTIGRAVITY_CLI: parse_antigravity,
         }
 
         # Cursor's `agent-transcripts` narrative shares the `cursor` agent label
@@ -2419,9 +2436,10 @@ class LocalSource:
             user_id=user_id,
             project_name=ref.project_name,
         )
-        if ref.agent == AgentType.GEMINI_CLI and ref.cwd:
+        if ref.agent in (AgentType.GEMINI_CLI, AgentType.ANTIGRAVITY_CLI) and ref.cwd:
             # Gemini CLI's transcript records no cwd; the indexer read the
             # project root from `.project_root`. Every call ran there.
+            # Antigravity CLI's cwd comes from `conversation_summaries.db`.
             for span in spans:
                 if span.parent_id is not None and not span.attributes.get("cwd"):
                     span.attributes["cwd"] = ref.cwd
@@ -2429,6 +2447,9 @@ class LocalSource:
         root = next((span for span in spans if span.parent_id is None), None)
         if root is not None:
             root.attributes.update({"git.branch": branch, "git.branches": branches})
+            if ref.parent_session_id:  # a subagent stored as its own conversation (Antigravity CLI)
+                root.attributes["harness.session_role"] = "subagent"
+                root.attributes["harness.parent_session_id"] = ref.parent_session_id
             # A cloud-run session stores selected-repository metadata in a sidecar
             # beside the unmodified transcript, whose remote cwd may be absent.
             repo = metadata.get("repo_name") if isinstance(metadata, dict) else None
@@ -2530,7 +2551,7 @@ class LocalSource:
 class _FileRef:
     """Internal pointer: session_id → file path + index-time metadata."""
 
-    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "path", "project_name", "subformat")
+    __slots__ = ("agent", "branch", "cwd", "home", "mtime", "parent_session_id", "path", "project_name", "subformat")
 
     def __init__(
         self,
@@ -2542,6 +2563,7 @@ class _FileRef:
         branch: str | None = None,
         home: Path | None = None,
         subformat: str | None = None,
+        parent_session_id: str | None = None,
     ):
         self.path = path
         self.agent = agent
@@ -2562,6 +2584,8 @@ class _FileRef:
         # The home dir under which this file was discovered — used to
         # look up the manifest identity for that home.
         self.home = home
+        # Session id of the conversation that spawned this one (Antigravity CLI subagents).
+        self.parent_session_id = parent_session_id
 
 
 __all__ = ["LocalSource", "ManifestIdentity"]

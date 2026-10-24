@@ -10,6 +10,8 @@ from __future__ import annotations
 from enum import StrEnum
 import json
 
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import is_antigravity_step
+
 
 class AgentType(StrEnum):
     """Agent enum used by the parsers + LocalSource dispatch.
@@ -25,6 +27,7 @@ class AgentType(StrEnum):
     CURSOR = "cursor"
     KIRO = "kiro"
     GEMINI_CLI = "gemini-cli"
+    ANTIGRAVITY_CLI = "antigravity-cli"
 
 
 def detect_agent(data: bytes) -> AgentType | None:
@@ -84,6 +87,9 @@ def detect_agent(data: bytes) -> AgentType | None:
             return AgentType.GEMINI_CLI
         if line_type == "gemini" and isinstance(obj.get("id"), str):
             return AgentType.GEMINI_CLI
+
+        if is_antigravity_step(obj):
+            return AgentType.ANTIGRAVITY_CLI
 
         # Codex: session_meta with codex originator.
         if line_type == "session_meta":
