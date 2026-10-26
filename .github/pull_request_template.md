@@ -1,5 +1,5 @@
-<!-- One change per PR. Read "Using AI tools" in CONTRIBUTING.md: a human must understand
-and be able to explain every line. PRs that look fully autonomous will be closed. -->
+<!-- One change per PR. Read "Using AI tools" in CONTRIBUTING.md: agents are welcome, but a
+human must review the diff and own this PR. PRs with no human behind them will be closed. -->
 
 ## Summary
 

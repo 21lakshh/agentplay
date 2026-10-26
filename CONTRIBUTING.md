@@ -56,7 +56,7 @@ A parser turns one agent's transcript into the shared span shape: a root Session
 
 AI coding tools are welcome. You stay responsible for everything you submit.
 
-- **A human must be in the loop.** Read and understand every line before you open the PR, and be ready to explain it. We close pull requests that look like they were opened by an agent with no one reviewing its work.
+- **A human must be in the loop.** Agents may open pull requests, but a person must have reviewed the diff, understand every line and answer review questions. We close pull requests with no one behind them.
 - **Write the PR description and replies yourself.** Explain the change in your own words. If you quote AI output, put it in a quote block and say where it came from.
 - **Never claim a check you did not run.** The test plan says what you actually ran and saw, and what you did not test.
 
