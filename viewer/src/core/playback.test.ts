@@ -103,6 +103,11 @@ describe('replayKeyAction', () => {
     });
   });
 
+  it('Home and End seek to start and end', () => {
+    expect(key('Home')).toEqual({ type: 'seek', index: 0 });
+    expect(key('End')).toEqual({ type: 'seek', index: Infinity });
+  });
+
   it('E / X / D / O / R jump, either case', () => {
     expect(key('e')).toEqual({ type: 'jump', kind: 'edit' });
     expect(key('X')).toEqual({ type: 'jump', kind: 'err' });
@@ -118,5 +123,11 @@ describe('replayKeyAction', () => {
     expect(key('e', { metaKey: true })).toBeNull();
     expect(key(' ', { ctrlKey: true })).toBeNull();
     expect(key('ArrowRight', { altKey: true })).toBeNull();
+    expect(key('Home', { ctrlKey: true })).toBeNull();
+    expect(key('Home', { metaKey: true })).toBeNull();
+    expect(key('Home', { altKey: true })).toBeNull();
+    expect(key('End', { ctrlKey: true })).toBeNull();
+    expect(key('End', { metaKey: true })).toBeNull();
+    expect(key('End', { altKey: true })).toBeNull();
   });
 });

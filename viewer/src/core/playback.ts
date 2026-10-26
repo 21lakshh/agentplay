@@ -86,6 +86,7 @@ export function playbackReducer(
 export type ReplayKeyAction =
   | { type: 'toggle' }
   | { type: 'step'; delta: number }
+  | { type: 'seek'; index: number }
   | { type: 'jump'; kind: JumpKey };
 
 type JumpKey = 'edit' | 'err' | 'delay' | 'out' | 'retry';
@@ -100,9 +101,10 @@ const JUMP_KEYS: Record<string, JumpKey> = {
 };
 
 /**
- * Space plays or pauses, the arrow keys step (Shift steps 10), and E / X / D /
- * O / R jump to the next edit / error / delay / output / retry. Any modifier
- * other than Shift means the key belongs to the browser, so it maps to nothing.
+ * Space plays or pauses, the arrow keys step (Shift steps 10), Home and End
+ * jump to the start and end, and E / X / D / O / R jump to the next edit /
+ * error / delay / output / retry. Any modifier other than Shift means the key
+ * belongs to the browser, so it maps to nothing.
  */
 export function replayKeyAction(e: {
   key: string;
@@ -113,6 +115,8 @@ export function replayKeyAction(e: {
 }): ReplayKeyAction | null {
   if (e.metaKey || e.ctrlKey || e.altKey) return null;
   if (e.key === ' ') return { type: 'toggle' };
+  if (e.key === 'Home') return { type: 'seek', index: 0 };
+  if (e.key === 'End') return { type: 'seek', index: Infinity };
   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
     const d = (e.shiftKey ? 10 : 1) * (e.key === 'ArrowRight' ? 1 : -1);
     return { type: 'step', delta: d };
