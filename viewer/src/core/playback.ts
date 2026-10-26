@@ -167,7 +167,7 @@ function actionForKey(key: string, shift: boolean): ReplayKeyAction | null {
   if (key === ' ') return { type: 'toggle' };
   if (key === 'ArrowRight' || key === 'ArrowLeft') {
     const d = (shift ? 10 : 1) * (key === 'ArrowRight' ? 1 : -1);
->>>>>>> upstream/main
+
     return { type: 'step', delta: d };
   }
   const k = key.toLowerCase();
