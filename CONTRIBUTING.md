@@ -52,10 +52,19 @@ A parser turns one agent's transcript into the shared span shape: a root Session
 - update [docs/format.md](docs/format.md), [schema/agentplay-v1.schema.json](schema/agentplay-v1.schema.json) and the viewer's zod schema (`viewer/src/core/schema.ts`) in the same PR;
 - keep new fields optional for readers, since older maps will not have them.
 
+## Using AI tools
+
+AI coding tools are welcome. You stay responsible for everything you submit.
+
+- **A human must be in the loop.** Read and understand every line before you open the PR, and be ready to explain it. We close pull requests that look like they were opened by an agent with no one reviewing its work.
+- **Write the PR description and replies yourself.** Explain the change in your own words. If you quote AI output, put it in a quote block and say where it came from.
+- **Never claim a check you did not run.** The test plan says what you actually ran and saw, and what you did not test.
+
 ## Pull requests
 
-- Keep each PR to one change, and include tests.
+- Keep each PR to one change, and include tests that fail without it.
 - Run `make check` before pushing.
+- Fill in the PR template: a summary in your own words, the linked issue, and a test plan.
 - For UI changes, attach before and after screenshots in light and dark (`pnpm screenshots` in `viewer/`).
 - By contributing, you agree that your contribution is licensed under the Apache License 2.0.
 
