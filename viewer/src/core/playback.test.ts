@@ -202,9 +202,6 @@ describe('replayKeyAction', () => {
     expect(key('End', { altKey: true })).toBeNull();
   });
 
-});
-
-
   it('the replay region, a map dot and the page body get every shortcut', () => {
     for (const target of [
       focused('<div role="region" tabindex="-1" data-t><p>map</p></div>'),
