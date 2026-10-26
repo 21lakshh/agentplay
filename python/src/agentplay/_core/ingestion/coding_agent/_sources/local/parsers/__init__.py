@@ -26,6 +26,7 @@ per-tool tool spans - so downstream code doesn't branch on agent.
 
 from __future__ import annotations
 
+from agentplay._core.ingestion.coding_agent._sources.local.parsers.antigravity import parse_antigravity
 from agentplay._core.ingestion.coding_agent._sources.local.parsers.base import (
     AgentType,
     detect_agent,
@@ -49,6 +50,7 @@ from agentplay._core.ingestion.coding_agent._sources.local.parsers.opencode impo
 __all__ = [
     "AgentType",
     "detect_agent",
+    "parse_antigravity",
     "parse_claude_code",
     "parse_codex",
     "parse_copilot",

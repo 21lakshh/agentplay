@@ -9,7 +9,7 @@
   <a href="https://github.com/Entelligence-AI/agentplay/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/Entelligence-AI/agentplay?style=social"></a>
 </p>
 
-**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro and Gemini CLI.**
+**See what your coding agent actually did. Replay every session as a map and a timeline: what it read, what it edited, what failed, and what it shipped. Local, open source, works across Claude Code, Codex, Cursor, Copilot, OpenCode, Kiro, Gemini CLI and Antigravity CLI.**
 
 ```bash
 uvx agentplay
@@ -133,7 +133,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 
 | Agent | Reads from (defaults) | Subagent lanes | Tokens | Notes |
 |---|---|---|---|---|
-| **Claude Code** | `~/.claude/projects/**/*.jsonl` and `…/subagents/agent-*.jsonl` | yes | per request | Highest fidelity: read straight from the JSONL, including hooks, compactions, stop reasons and latency |
+| **Claude Code** | `~/.claude/projects/**/*.jsonl` and `…/subagents/**/agent-*.jsonl` | yes | per request | Highest fidelity: read straight from the JSONL, including hooks, compactions, stop reasons and latency |
 | **Codex** (CLI, IDE) | `~/.codex/sessions/**/*.jsonl` | main lane only | per turn | |
 | **Cursor** (agent CLI and IDE composer) | `~/.cursor` agent transcripts, `~/.cursor/chats/*/*/store.db`, IDE `state.vscdb` | main lane only | not recorded, see limitations | SQLite stores are copied and decoded locally, read-only |
 | **GitHub Copilot CLI** | `~/.copilot/session-state/**` | main lane only | per turn | |
@@ -141,6 +141,7 @@ Every view is a URL, so a link to a moment in a session reopens it for anyone wh
 | **OpenCode** | `~/.local/share/opencode/opencode.db` | main lane only | per turn | SQLite, decoded locally |
 | **Kiro** | `~/.kiro/sessions/*/*` | main lane only | per turn, where recorded | Sub-executions merged into the session |
 | **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl` | main lane only | per turn | The project folder is read from the CLI's `.project_root` file |
+| **Antigravity CLI** (`agy`) | `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl` | main lane only | per turn | Project folder and subagent links from `conversation_summaries.db`, copied and read locally, read-only. Subagents are listed as separate subagent sessions. Model not recorded yet |
 
 "Main lane only" means the session's own tool calls are all there, but subagent work is not split out into separate lanes on the map.
 
@@ -193,8 +194,8 @@ agentplay agents      show which agents were found on this machine
 
 | Flag | On | Meaning |
 |---|---|---|
-| `--since 30d` | build, view | only sessions changed in the window (`12h`, `2w`, `2026-09-01`) |
-| `--agents claude-code,codex` | build, view | limit to these agents |
+| `--since 30d` | build, view, list | only sessions changed in the window (`12h`, `2w`, `2026-09-01`); list uses the stored transcript modification time, or the start time when that time is unavailable |
+| `--agents claude-code,codex` | build, view, list | limit to these agents |
 | `--rebuild` | build, view | rebuild even unchanged sessions |
 | `--path-mode dirs_only` | build, view | see [Privacy](#privacy) |
 | `--limit N` | build, view, list | newest N sessions |
@@ -275,6 +276,7 @@ All configuration is through environment variables. The examples in this README 
 | `AGENTPLAY_OPENCODE_HOMES` | `$XDG_DATA_HOME/opencode` | OpenCode data dirs |
 | `AGENTPLAY_KIRO_HOMES` | `~/.kiro` | Kiro homes |
 | `AGENTPLAY_GEMINI_HOMES` | `~/.gemini` | Gemini CLI homes |
+| `AGENTPLAY_ANTIGRAVITY_HOMES` | `~/.gemini/antigravity-cli` | Antigravity CLI homes |
 | `AGENTPLAY_HMAC_KEY` | unset | key for `--path-mode hashed` |
 | `DO_NOT_TRACK`, `AGENTPLAY_NO_NETWORK` | unset | set either to turn off the email signup and its one network call |
 | `AGENTPLAY_SIGNUP_URL` | built in | where the signup sends an email (for testing; see [docs/signup-endpoint.md](docs/signup-endpoint.md)) |
