@@ -3,7 +3,7 @@ human must review the diff and own this PR. PRs with no human behind them will b
 
 ## Summary
 
-<!-- What and why, in your own words. Link the issue: Closes #N -->
+<!-- What changed and why, in a few lines a reviewer can trust. It must match the diff. Link the issue: Closes #N -->
 
 ## Test plan
 

@@ -57,14 +57,14 @@ A parser turns one agent's transcript into the shared span shape: a root Session
 AI coding tools are welcome. You stay responsible for everything you submit.
 
 - **A human must be in the loop.** Agents may open pull requests, but a person must have reviewed the diff, understand every line and answer review questions. We close pull requests with no one behind them.
-- **Write the PR description and replies yourself.** Explain the change in your own words. If you quote AI output, put it in a quote block and say where it came from.
+- **The description must be true and clear.** You or your agent can write it. Either way, it says what changed and why, matches the diff, and stays short: no filler, no restating the code.
 - **Never claim a check you did not run.** The test plan says what you actually ran and saw, and what you did not test.
 
 ## Pull requests
 
 - Keep each PR to one change, and include tests that fail without it.
 - Run `make check` before pushing.
-- Fill in the PR template: a summary in your own words, the linked issue, and a test plan.
+- Fill in the PR template: a short summary of what changed and why, the linked issue, and a test plan.
 - For UI changes, attach before and after screenshots in light and dark (`pnpm screenshots` in `viewer/`).
 - By contributing, you agree that your contribution is licensed under the Apache License 2.0.
 
