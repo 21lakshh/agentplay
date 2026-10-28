@@ -17,6 +17,7 @@ import re
 from agentplay._core.code_authorship import extract_edit_evidence
 from agentplay._core.ingestion.coding_agent._paths import basename as path_basename
 from agentplay._core.ingestion.coding_agent._sources._jsonl_utils import (
+    SOURCE_OFFSET_KEY,
     drop_untyped,
     parse_dt,
     parse_jsonl_records,
@@ -130,7 +131,7 @@ def parse_codex(
     project_name: str | None = None,
 ) -> tuple[TraceData, list[SpanData]]:
     """Parse a Codex JSONL file into a span tree."""
-    lines = _parse_jsonl(data)
+    lines = _own_records(_parse_jsonl(data), data)
     if not lines:
         now = datetime.now(UTC)
         trace = TraceData(trace_id=trace_id, start_time=now, end_time=now)
@@ -299,6 +300,7 @@ def parse_codex(
             "harness.agent_version": agent_version,
         },
     )
+    root_span.attributes.update(_thread_attrs(lines))
     compactions, interruptions = _session_signals(lines)
     if compactions:
         root_span.attributes["harness.compactions"] = compactions
@@ -367,6 +369,68 @@ def _parse_jsonl(data: bytes) -> list[dict]:
             for block in payload["content"]:
                 drop_untyped(block, ("type", "text"), str)
     return records
+
+
+def _own_records(lines: list[dict], data: bytes) -> list[dict]:
+    """Drop the parent history a forked subagent rollout starts with.
+
+    A subagent spawned with `fork_turns` copies the parent's conversation into
+    its own rollout, all stamped with the fork time, and records where its own
+    lines begin in `session_meta.subagent_history_start_ordinal` (the 0-based
+    index of its first own line). Parsing the copy would count the parent's
+    prompts as the subagent's turns and bill the parent's tokens twice. Only
+    the subagent's own `session_meta` (always first) is kept from the copy.
+
+    The ordinal counts physical lines, and the parsed records skip blank or
+    unreadable ones, so the cut is made at that line's byte offset (the same
+    normalized stream `parse_jsonl_records` stamps offsets on).
+
+    Subagents only: a `guardian_review` rollout records the same field, but
+    its own reviews are written BEFORE that ordinal, so cutting there would
+    drop every request it made.
+    """
+    if not lines or lines[0].get("type") != "session_meta":
+        return lines
+    meta = lines[0].get("payload", {})
+    if meta.get("thread_source") != "subagent":
+        return lines
+    start = meta.get("subagent_history_start_ordinal")
+    if type(start) is not int or start <= 1:
+        return lines
+    stream = data.decode("utf-8", errors="replace").encode("utf-8")
+    cut = -1
+    for _ in range(start):
+        cut = stream.find(b"\n", cut + 1)
+        if cut < 0:
+            return lines[:1]  # the whole file is the copied history
+    cut += 1
+    return [lines[0], *(line for line in lines[1:] if line.get(SOURCE_OFFSET_KEY, 0) >= cut)]
+
+
+def _thread_attrs(lines: list[dict]) -> dict:
+    """Who started this thread, from the rollout's own `session_meta`.
+
+    Codex Desktop writes each subagent (and each guardian review) as its own
+    rollout. `thread_source` says which (`user`, `subagent`,
+    `guardian_review`, ...), `parent_thread_id` names the thread that spawned
+    it, and `source.subagent.thread_spawn.agent_path` is the task path the
+    parent's `spawn_agent` call returned, which links a launch to its child.
+    """
+    meta = lines[0].get("payload", {}) if lines and lines[0].get("type") == "session_meta" else {}
+    attrs = {}
+    for key, value in (
+        ("harness.thread_source", meta.get("thread_source")),
+        ("harness.parent_thread_id", meta.get("parent_thread_id")),
+    ):
+        if isinstance(value, str) and value:
+            attrs[key] = value
+    source = meta.get("source")
+    spawn = source.get("subagent") if isinstance(source, dict) else None
+    spawn = spawn.get("thread_spawn") if isinstance(spawn, dict) else None
+    path = spawn.get("agent_path") if isinstance(spawn, dict) else None
+    if isinstance(path, str) and path:
+        attrs["harness.agent_path"] = path[:200]
+    return attrs
 
 
 def _request_input(usage: object) -> int:

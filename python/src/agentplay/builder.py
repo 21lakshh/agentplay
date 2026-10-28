@@ -2661,6 +2661,7 @@ def build_map_from_spans(
     role: str | None = None,
     parent_session_id: str | None = None,
     started_at_hint: float | None = None,
+    subagents: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build a map from the shared ``LocalSource`` span tree (Codex, Cursor, Kiro, …).
 
@@ -2668,8 +2669,14 @@ def build_map_from_spans(
     (children of turns) become tool events. A Codex turn becomes one ``llm``
     event per request in its ``llm.cost_events``, so each carries the context
     that request was sent; every other agent keeps one ``llm`` event per turn
-    (turn-level tokens). Subagent traffic is not in the span tree, so these
-    maps have only the main agent.
+    (turn-level tokens).
+
+    ``subagents`` are subagent span trees stored as their own sessions (Codex
+    Desktop writes one rollout per subagent): ``{"id", "parent", "spans",
+    "path"}`` dicts, each read into its own lane under ``parent`` (``"main"``
+    or another subagent's ``id``). A lane never emits ``user`` events, as for
+    Claude Code subagents. The parent's ``spawn_agent`` call whose output
+    names the subagent's ``path`` becomes that lane's launch event.
 
     ``started_at_hint`` (epoch seconds, typically the source file's own mtime) is
     the session's ``startedAt`` when no span carries a timestamp — a real gap seen
@@ -2688,8 +2695,26 @@ def build_map_from_spans(
         b.default_model = str((getattr(root, "attributes", {}) or {}).get("llm.model_name") or "")[
             :60
         ]
-    _read_spans(b, spans, "main", per_request=agent_tool == "codex")
-    return b.finish(
+    per_request = agent_tool == "codex"
+    launches = _read_spans(b, spans, "main", per_request=per_request)
+    for sub in subagents or []:
+        # The same task name can be spawned twice: launches pair with
+        # subagents (oldest first) in order.
+        queue = launches.get(sub.get("path") or "")
+        launch = queue.pop(0) if queue else None
+        b.agents.append(
+            {
+                "id": sub["id"],
+                "parent": sub.get("parent") or "main",
+                "kind": "subagent",
+                "subagentType": (launch or {}).get("subagentType") or "general",
+            }
+        )
+        if launch is not None:
+            launch["child"] = sub["id"]
+        for path, evs in _read_spans(b, sub["spans"], sub["id"], per_request=per_request).items():
+            launches.setdefault(path, []).extend(evs)
+    doc = b.finish(
         session={
             "id": session_id,
             "agentTool": agent_tool,
@@ -2699,10 +2724,36 @@ def build_map_from_spans(
             "startedAt": _iso(started_at_hint) if started_at_hint else None,
         }
     )
+    for a in doc["agents"]:
+        launch = next((e for e in doc["events"] if e.get("child") == a["id"]), None)
+        if launch is not None:
+            a["launchSeq"] = launch["seq"]
+    return doc
 
 
-def _read_spans(b: MapBuilder, spans: list[Any], agent: str, *, per_request: bool) -> None:
-    """One span tree's events into ``agent``'s lane."""
+_TASK_NAME_RE = re.compile(r'"task_name"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _spawned_path(out: Any) -> str:
+    """The task path a Codex ``spawn_agent`` call returned (``{"task_name": ...}``).
+
+    Read by pattern, not ``json.loads``: the parser cuts ``output.value`` at
+    2,000 characters, which would leave a longer output unparseable."""
+    m = _TASK_NAME_RE.search(out) if isinstance(out, str) else None
+    if m is None:
+        return ""
+    try:
+        return str(json.loads(f'"{m.group(1)}"'))
+    except ValueError:
+        return m.group(1)
+
+
+def _read_spans(
+    b: MapBuilder, spans: list[Any], agent: str, *, per_request: bool
+) -> dict[str, list[dict[str, Any]]]:
+    """One span tree's events into ``agent``'s lane. Returns its subagent launch
+    events keyed by the task path each one spawned."""
+    launches: dict[str, list[dict[str, Any]]] = {}
     turn_ids = {s.span_id for s in spans if str(getattr(s, "name", "")).startswith("Turn ")}
     for s in spans:
         attrs = getattr(s, "attributes", {}) or {}
@@ -2798,9 +2849,12 @@ def _read_spans(b: MapBuilder, spans: list[Any], agent: str, *, per_request: boo
         out = attrs.get("output.value")
         if out is not None:
             ev["outBytes"] = len(str(out))
+        if ev["kind"] == "subagent" and (path := _spawned_path(out)):
+            launches.setdefault(path, []).append(ev)
         b.resolve_outputs(
             ev, str(out or "")[:20_000], ev["err"], end_ts if end_ts is not None else ts
         )
+    return launches
 
 
 # ---------------------------------------------------------------- serialization
