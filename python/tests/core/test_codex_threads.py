@@ -121,7 +121,7 @@ def test_a_prompt_written_as_a_markdown_heading_opens_a_turn():
             *_call("c1"),
         ]
     )
-    assert len(_turns(spans)) == 1
+    assert [t.attributes["input.value"] for t in _turns(spans)] == ["# Plan\nrefactor the parser"]
     assert len(_tools(spans)) == 1
 
 
@@ -331,6 +331,20 @@ def test_the_fork_cut_counts_physical_lines():
     assert len(_tools(spans)) == 1
 
 
+def test_a_child_whose_parent_window_is_gone_is_not_folded_into_a_later_one(tmp_path, monkeypatch):
+    day = tmp_path / ".codex" / "sessions" / "2026" / "09" / "08"
+    # Only a later window of the parent thread is on disk; the one the child ran in is gone.
+    _write(day / _name("12-00-00", PARENT, WINDOW), [_meta(PARENT), _user("Later"), *_call("w1")])
+    _write(day / _name("10-05-00", CHILD), _forked_child())
+    source, found = _source(tmp_path / ".codex", monkeypatch)
+    window = found[_name("12-00-00", PARENT, WINDOW)]
+    child = found[_name("10-05-00", CHILD)]
+    assert source._build_index()[child.session_id].parent_session_id is None
+    assert source.codex_subagents(window.session_id) == []
+    assert discover.build_map(child, source)["session"]["role"] is None
+    assert [a["id"] for a in discover.build_map(window, source)["agents"]] == ["main"]
+
+
 def test_a_self_parented_or_cyclic_thread_is_never_folded(tmp_path, monkeypatch):
     day = tmp_path / ".codex" / "sessions" / "2026" / "09" / "08"
     loop = [_meta(CHILD, "subagent", CHILD), _agent_message(), *_call("c1")]
@@ -406,3 +420,17 @@ def test_a_spawn_output_cut_short_still_links_its_subagent():
     lanes = [{"id": "sa-1", "parent": "main", "spans": child, "path": "/root/fix"}]
     doc = builder.build_map_from_spans(parent, session_id="s", agent_tool="codex", subagents=lanes)
     assert next(e for e in doc["events"] if e.get("tool") == "spawn_agent")["child"] == "sa-1"
+
+
+def test_a_subagent_with_no_spans_still_yields_its_own_subagents_lanes(tmp_path, monkeypatch):
+    home = _family(tmp_path)
+    day = home / "sessions" / "2026" / "09" / "08"
+    grandchild = [_meta(GUARDIAN, "subagent", CHILD), _agent_message(), *_call("gc1")]
+    _write(day / _name("10-06-00", GUARDIAN), grandchild, 3_000)
+    source, found = _source(home, monkeypatch)
+    child = found[_name("10-05-00", CHILD)].session_id
+    spans_of = source.get_spans_by_session
+    # The middle subagent can't be read (no root span); its own subagent can.
+    monkeypatch.setattr(source, "get_spans_by_session", lambda sid: [] if sid == child else spans_of(sid))
+    doc = discover.build_map(found[_name("10-00-00", PARENT)], source)
+    assert [a["id"] for a in doc["agents"]] == ["main", "sa-" + GUARDIAN]

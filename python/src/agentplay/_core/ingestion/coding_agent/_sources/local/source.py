@@ -782,8 +782,10 @@ def _link_codex_threads(index: dict[str, _FileRef]) -> dict[str, list[str]]:
     ancestor is refused, so a malformed `parent_thread_id` can never fold a
     session into itself. A long thread can be split over several rollouts sharing one
     thread id (`rollout-<start>-<thread>_<window>.jsonl`); a child belongs to
-    the latest of them that started at or before it did. A rollout's name
-    starts with its local start time, so names sort by start.
+    the latest of them that started at or before it did. When every window
+    on disk started after the child, the one it ran in is gone, so the child
+    stays a session of its own rather than being folded into a later window.
+    A rollout's name starts with its local start time, so names sort by start.
 
     A subagent's activity clock is the newest write across the parent and
     every subagent below it, so a parent is rebuilt when a subagent grows.
@@ -817,9 +819,9 @@ def _link_codex_threads(index: dict[str, _FileRef]) -> dict[str, list[str]]:
         windows = sorted(by_thread.get(thread[2], ()))
         if not windows:
             continue  # the parent rollout is gone: the child stays a session of its own
-        parent = next(
-            (sid for name, sid in reversed(windows) if name <= ref.path.name), windows[0][1]
-        )
+        parent = next((sid for name, sid in reversed(windows) if name <= ref.path.name), None)
+        if parent is None:
+            continue  # its parent window is gone: never fold it into a later one
         ref.parent_session_id = parent
         children.setdefault(parent, []).append(session_id)
     for kids in children.values():

@@ -318,21 +318,22 @@ def _codex_subagents(c: Candidate, source: Any) -> list[dict[str, Any]]:
             total += ref.path.stat().st_size if ref is not None else 0
         if total > MAX_SOURCE_BYTES:
             raise SkipSession("too_large")
+        # A child that yields no lane (unreadable, or no spans) still spawned its
+        # own subagents: queue them first so their lanes are not lost with it.
+        if depth < _CODEX_SUBAGENT_DEPTH:
+            pending.extend((kid, depth + 1) for kid in source.codex_subagents(sid))
         spans = source.get_spans_by_session(sid)
         root = next((s for s in spans if s.parent_id is None), None)
         if root is None:
             continue
-        lane = "sa-" + sid[-36:]
         lanes.append(
             {
-                "id": lane,
+                "id": "sa-" + sid[-36:],
                 "parent": "main",
                 "spans": spans,
                 "path": root.attributes.get("harness.agent_path") or "",
             }
         )
-        if depth < _CODEX_SUBAGENT_DEPTH:
-            pending.extend((kid, depth + 1) for kid in source.codex_subagents(sid))
     return lanes
 
 
