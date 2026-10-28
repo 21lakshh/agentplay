@@ -364,6 +364,14 @@ def _parse_jsonl(data: bytes) -> list[dict]:
     return records
 
 
+# A user-role message whose text starts with one of these is context Codex
+# injected, not a prompt: `<environment_context>`, `<user_instructions>`, ...,
+# the repo's AGENTS.md, and the IDE extension's editor context (whose clean
+# prompt follows as an `event_msg` `user_message`). A prompt the user wrote as
+# a markdown heading (`# Plan`, `## Error Type`) is still a prompt.
+_INJECTED_PREFIXES = ("<", "# AGENTS.md instructions", "# Context from my IDE setup")
+
+
 def _total_only_usage(usage: dict) -> bool:
     """Recognize legacy exports whose component counters are absent/zero.
 
@@ -528,9 +536,10 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
     """Group Codex lines into turns keyed on user `response_item` messages.
 
     Codex turn boundary = a `response_item` with `role=user` carrying
-    text that isn't a system context injection (lines starting with
-    `<` or `#`). Tokens land on `event_msg` `token_count` lines and
-    accumulate into the current turn.
+    text that isn't a system context injection (`_INJECTED_PREFIXES`).
+    A subagent's rollout has no user message: its first turn opens on the
+    parent's `agent_message`. Tokens land on `event_msg` `token_count`
+    lines and accumulate into the current turn.
     """
     turns: list[dict] = []
     current_turn: dict | None = None
@@ -617,7 +626,7 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
             for block in content if isinstance(content, list) else []:
                 if isinstance(block, dict) and block.get("type") == "input_text":
                     text = block.get("text", "")
-                    if not text.startswith("<") and not text.startswith("#"):
+                    if text and not text.startswith(_INJECTED_PREFIXES):
                         user_text = text
                         break
 
@@ -638,6 +647,30 @@ def _group_into_turns(lines: list[dict]) -> tuple[list[dict], bool]:
                     "model": current_model,
                     "_native_turn_id": active_native_turn_id,
                 }
+
+        elif (
+            line_type == "response_item"
+            and payload.get("type") == "agent_message"
+            and current_turn is None
+        ):
+            # A subagent's input: its parent's task message, not a user prompt.
+            # It opens the subagent's first turn so the tool calls that follow
+            # have a turn to land in. No prompt text is kept: like Claude Code,
+            # a subagent's instructions are never a user turn.
+            current_turn = {
+                "_src": line,
+                "user_query": "",
+                "start_ts": ts,
+                "end_ts": ts,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "reasoning_tokens": 0,
+                "cache_read": 0,
+                "tools": [],
+                "cost_events": [],
+                "model": current_model,
+                "_native_turn_id": active_native_turn_id,
+            }
 
         elif line_type == "token_usage_record" and native_events is not None:
             event = native_events.get(source_attrs(line)["source.content_hash"])
