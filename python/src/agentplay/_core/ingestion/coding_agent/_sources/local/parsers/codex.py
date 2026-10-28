@@ -299,6 +299,11 @@ def parse_codex(
             "harness.agent_version": agent_version,
         },
     )
+    compactions, interruptions = _session_signals(lines)
+    if compactions:
+        root_span.attributes["harness.compactions"] = compactions
+    if interruptions:
+        root_span.attributes["harness.interruptions"] = interruptions
     all_spans.insert(0, root_span)
     incomplete_turns = [turn for turn in turns if turn.get("usage_incomplete")]
     # native_ledger_rejected covers the case a rejected native ledger leaves no
@@ -362,6 +367,47 @@ def _parse_jsonl(data: bytes) -> list[dict]:
             for block in payload["content"]:
                 drop_untyped(block, ("type", "text"), str)
     return records
+
+
+def _request_input(usage: object) -> int:
+    """A request's full input (cached included): the context it was sent."""
+    value = usage.get("input_tokens") if isinstance(usage, dict) else None
+    return value if type(value) is int and value > 0 else 0
+
+
+def _session_signals(lines: list[dict]) -> tuple[list[dict], list[str]]:
+    """Compactions and user interrupts, each at its own timestamp.
+
+    A `compacted` record is Codex replacing the history with a summary. Its
+    `latest_token_usage_record` is usually null, so the context before it
+    falls back to the last request's input seen in the rollout. A
+    `turn_aborted` event with reason `interrupted` is the user stopping a turn
+    (Esc). Neither carries text into the result.
+    """
+    compactions: list[dict] = []
+    interruptions: list[str] = []
+    last_input = 0
+    for line in lines:
+        kind = line.get("type")
+        payload = line.get("payload", {})
+        ts = line.get("timestamp")
+        if kind == "event_msg" and payload.get("type") == "token_count":
+            info = payload.get("info") or {}
+            last_input = _request_input(info.get("last_token_usage")) or last_input
+        elif kind == "token_usage_record":
+            last_input = _request_input(payload.get("usage")) or last_input
+        elif kind == "compacted" and ts:
+            record = payload.get("latest_token_usage_record")
+            usage = record.get("usage") if isinstance(record, dict) else None
+            compactions.append({"timestamp": ts, "pre_tokens": _request_input(usage) or last_input})
+        elif (
+            kind == "event_msg"
+            and payload.get("type") == "turn_aborted"
+            and payload.get("reason") == "interrupted"
+            and ts
+        ):
+            interruptions.append(ts)
+    return compactions, interruptions
 
 
 # A user-role message whose text starts with one of these is context Codex

@@ -147,3 +147,57 @@ def test_the_ide_extension_context_block_is_not_a_prompt():
         ]
     )
     assert [t.attributes["input.value"] for t in _turns(spans)] == ["Fix it"]
+
+
+# ------------------------------------------------------------------ #47
+def test_compactions_and_interrupts_are_recorded_on_the_root():
+    spans = _parse(
+        [
+            _meta(PARENT),
+            _user("Fix it"),
+            *_call("c1"),
+            _usage(180_000, 0, 10, 0, 3),
+            _line("compacted", {"message": "", "replacement_history": [], "latest_token_usage_record": None}, 4),
+            _line("event_msg", {"type": "turn_aborted", "reason": "interrupted"}, 5),
+            _line("event_msg", {"type": "turn_aborted", "reason": "replaced"}, 6),
+        ]
+    )
+    root = next(s for s in spans if s.parent_id is None)
+    assert root.attributes["harness.compactions"] == [{"timestamp": "2026-09-08T10:00:04Z", "pre_tokens": 180_000}]
+    assert root.attributes["harness.interruptions"] == ["2026-09-08T10:00:05Z"]
+
+
+def test_context_is_the_largest_request_not_the_turn_sum():
+    records = [_meta(PARENT), _user("Fix it")]
+    total = 0
+    for i in range(5):
+        records.append(_usage(200_000, 150_000, 100, total, i + 2))
+        total += 200_100
+    records += [
+        _line("compacted", {"message": "", "replacement_history": []}, 9),
+        _line("event_msg", {"type": "turn_aborted", "reason": "interrupted"}, 10),
+    ]
+    spans = _parse(records)
+    doc = builder.build_map_from_spans(spans, session_id="local:codex:t", agent_tool="codex")
+    assert doc["totals"]["maxContext"] == 200_000
+    assert doc["totals"]["requests"] == 5
+    assert doc["totals"]["tokens"] == 5 * 200_100
+    assert doc["totals"]["compactions"] == 1
+    compaction = next(e for e in doc["events"] if e["kind"] == "compaction")
+    assert compaction["preTokens"] == 200_000
+    assert doc["totals"]["errorsByClass"] == {"interrupted": 1}
+    assert doc["session"]["outcome"] == "interrupted"
+
+
+def test_per_request_events_cost_the_same_as_the_turn():
+    records = [_meta(PARENT), _line("turn_context", {"model": "gpt-5"}), _user("Fix it")]
+    total = 0
+    for i in range(3):
+        records.append(_usage(50_000, 10_000, 500, total, i + 2))
+        total += 50_500
+    spans = _parse(records)
+    per_request = builder.build_map_from_spans(spans, session_id="s", agent_tool="codex")
+    per_turn = builder.build_map_from_spans(spans, session_id="s", agent_tool="kiro")
+    assert per_request["totals"]["costUsd"] == per_turn["totals"]["costUsd"] > 0
+    assert per_request["totals"]["tokens"] == per_turn["totals"]["tokens"]
+    assert per_turn["totals"]["requests"] == 1
